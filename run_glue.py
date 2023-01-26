@@ -383,8 +383,8 @@ def main():
     )
     for n, m in model.named_modules():
         if isinstance(m, nn.Linear):
-            masked_linear = MaskedLinear(m.in_features,
-                                         m.out_features,
+            masked_linear = MaskedLinear(m.weight,
+                                         m.bias,
                                          mask_scale=model_args.init_scale,
                                          threshold=model_args.threshold,
                                          initial_sparsity=model_args.initial_sparsity,

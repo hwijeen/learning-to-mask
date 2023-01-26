@@ -37,28 +37,19 @@ class Ternarizer(torch.autograd.Function):
         return grad_output, None
 
 
-class MaskedLinear(nn.Linear):
-    def __init__(self, in_features: int, out_features: int, bias: bool = True,
-                 mask_init: str = '1s', mask_scale: float = 2e-2,
+class MaskedLinear(nn.Module):
+    def __init__(self, weight: Tensor, bias: Tensor,
+                 mask_init: str = 'uniform', mask_scale: float = 2e-2,
                  threshold_fn:str = 'binarizer', threshold: float = 1e-2,
                  initial_sparsity: float = 0.1, device=None, dtype=None) -> None:
-        factory_kwargs = {'device': device, 'dtype': dtype}
-        super(nn.Linear, self).__init__()  # call grandparent's init
-        self.in_features = in_features
-        self.out_features = out_features
+        super().__init__()  # call grandparent's init
+        self.weight = weight
+        self.bias = bias
         self.mask_init = mask_init
         self.mask_scale = mask_scale
         self.threshold_fn = threshold_fn
         self.threshold = threshold
         self.initial_sparsity = initial_sparsity
-
-        # weight and bias are no longer Parameters.
-        self.weight = torch.empty((out_features, in_features), **factory_kwargs)
-        if bias:
-            self.bias = torch.empty(out_features, **factory_kwargs)
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
 
         # Initialize real-valued mask weights.
         self.mask_real = self.weight.data.new(self.weight.size())
@@ -106,3 +97,7 @@ class MaskedLinear(nn.Linear):
 
         self.weight.data = fn(self.weight.data)
         self.bias.data = fn(self.bias.data)
+
+    @property
+    def num_zeros(self):
+        return self.mask_real.le(self.threshold).sum().item()
