@@ -47,7 +47,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
 from layers import MaskedLinear
-from utils import recursive_setattr
+from utils import recursive_setattr, calculate_sparsity
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -390,9 +390,8 @@ def main():
                                          initial_sparsity=model_args.initial_sparsity,
                                          )
             recursive_setattr(model, n, masked_linear)
-    # TODO: calculate sparsity
-    # TODO: check initial_sparsity, mask_scale, threshold
-    # TODO: check learning rate
+    print(f"Initial sparsity: {calculate_sparsity(model)}", end="\n\n\n")
+    import ipdb; ipdb.set_trace(context=10)
 
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
