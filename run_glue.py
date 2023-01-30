@@ -213,8 +213,7 @@ class ModelArguments:
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
-    # TODO: add flag or something
-    initial_sparsity: float = field(default=0.1, metadata={"help": "Initial sparsity."})
+    initial_sparsity: float = field(default=0.0, metadata={"help": "Initial sparsity."})
     init_scale: float = field(default=0.02, metadata={"help": "Initial scale."})
     threshold: float = field(default=0.01, metadata={"help": "Threshold."})
 
@@ -402,16 +401,17 @@ def main():
             use_auth_token=True if model_args.use_auth_token else None,
             ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
         )
-    for n, m in model.named_modules():
-        if isinstance(m, nn.Linear):
-            masked_linear = MaskedLinear(m.weight,
-                                         m.bias,
-                                         mask_scale=model_args.init_scale,
-                                         threshold=model_args.threshold,
-                                         initial_sparsity=model_args.initial_sparsity,
-                                         )
-            recursive_setattr(model, n, masked_linear)
-    print(f"Initial sparsity: {calculate_sparsity(model)}", end="\n\n\n")
+    if model_args.initial_sparsity != 0.0:
+        for n, m in model.named_modules():
+            if isinstance(m, nn.Linear):
+                masked_linear = MaskedLinear(m.weight,
+                                             m.bias,
+                                             mask_scale=model_args.init_scale,
+                                             threshold=model_args.threshold,
+                                             initial_sparsity=model_args.initial_sparsity,
+                                             )
+                recursive_setattr(model, n, masked_linear)
+        print(f"Initial sparsity: {calculate_sparsity(model)}", end="\n\n\n")
 
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
