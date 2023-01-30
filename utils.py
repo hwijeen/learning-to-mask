@@ -1,3 +1,5 @@
+from functools import reduce
+
 from layers import MaskedLinear
 
 
@@ -23,3 +25,10 @@ def calculate_sparsity(model):
                 if isinstance(m, MaskedLinear):
                     zero_params += m.num_zeros
     return zero_params / total_params
+
+
+def chain(*funcs):
+    def chained_call(arg):
+        return reduce(lambda r, f: f(r), funcs, arg)
+
+    return chained_call

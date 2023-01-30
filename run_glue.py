@@ -25,13 +25,15 @@ from typing import Optional
 
 import datasets
 import numpy as np
-from datasets import load_dataset
+from datasets import load_dataset, Value
 import evaluate
+import torch
 import torch.nn as nn
 import transformers
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
+    AutoModelForMaskedLM,
     AutoTokenizer,
     DataCollatorWithPadding,
     EvalPrediction,
@@ -41,13 +43,15 @@ from transformers import (
     TrainingArguments,
     default_data_collator,
     set_seed,
+    EarlyStoppingCallback,
 )
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
 from layers import MaskedLinear
-from utils import recursive_setattr, calculate_sparsity
+from utils import recursive_setattr, calculate_sparsity, chain
+from pattern_verbalizer import rte_pv_fn, DataCollatorForClozeTask, ANSWER_TOKEN
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -65,6 +69,10 @@ task_to_keys = {
     "sst2": ("sentence", None),
     "stsb": ("sentence1", "sentence2"),
     "wnli": ("sentence1", "sentence2"),
+}
+
+task_to_pv_fn = {
+    "rte" : rte_pv_fn
 }
 
 logger = logging.getLogger(__name__)
@@ -145,6 +153,7 @@ class DataTrainingArguments:
         default=None, metadata={"help": "A csv or a json file containing the validation data."}
     )
     test_file: Optional[str] = field(default=None, metadata={"help": "A csv or a json file containing the test data."})
+    cloze_task: Optional[bool] = field(default=False, metadata={"help": "Formulate downstream task as cloze task"})
 
     def __post_init__(self):
         if self.task_name is not None:
@@ -204,6 +213,7 @@ class ModelArguments:
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
+    # TODO: add flag or something
     initial_sparsity: float = field(default=0.1, metadata={"help": "Initial sparsity."})
     init_scale: float = field(default=0.02, metadata={"help": "Initial scale."})
     threshold: float = field(default=0.01, metadata={"help": "Threshold."})
@@ -372,15 +382,26 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-        ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-    )
+    if data_args.cloze_task:
+        model = AutoModelForMaskedLM.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
     for n, m in model.named_modules():
         if isinstance(m, nn.Linear):
             masked_linear = MaskedLinear(m.weight,
@@ -391,7 +412,6 @@ def main():
                                          )
             recursive_setattr(model, n, masked_linear)
     print(f"Initial sparsity: {calculate_sparsity(model)}", end="\n\n\n")
-    import ipdb; ipdb.set_trace(context=10)
 
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
@@ -458,7 +478,28 @@ def main():
         # Map labels to IDs (not necessary for GLUE tasks)
         if label_to_id is not None and "label" in examples:
             result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
+        if data_args.cloze_task:
+            answer_token_id = tokenizer.convert_tokens_to_ids(ANSWER_TOKEN)
+            result["label"] = tokenizer.convert_tokens_to_ids(examples["label"])
         return result
+
+    if data_args.cloze_task:
+        pv_fn = task_to_pv_fn[data_args.task_name]
+        def pattern_verbalizer(examples):
+            # turn examples into pvp format, depending on the task
+            sent1s = examples[sentence1_key]
+            sent2s = examples[sentence2_key] if sentence2_key is not None else None
+            labels = examples["label"]
+            sent1s, sent2s, labels = pv_fn(sent1s, sent2s, labels)
+            examples[sentence1_key] = sent1s
+            examples[sentence2_key] = sent2s
+            examples["label"] = labels
+            return examples
+        preprocess_function = chain(pattern_verbalizer, preprocess_function)
+        raw_datasets["train"].features["label"] = Value(dtype='int32', id=None)
+        raw_datasets["validation"].features["label"] = Value(dtype='int32', id=None)
+        if "test" in raw_datasets:
+            raw_datasets["test"].features["label"] = Value(dtype='int32', id=None)
 
     with training_args.main_process_first(desc="dataset map pre-processing"):
         raw_datasets = raw_datasets.map(
@@ -525,6 +566,8 @@ def main():
         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
     else:
         data_collator = None
+    if data_args.cloze_task:
+        data_collator = DataCollatorForClozeTask(tokenizer)
 
     # Initialize our Trainer
     trainer = Trainer(
@@ -535,6 +578,7 @@ def main():
         compute_metrics=compute_metrics,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        # callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
     )
 
     # Training
