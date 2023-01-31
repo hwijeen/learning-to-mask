@@ -72,7 +72,7 @@ task_to_keys = {
 }
 
 task_to_pv_fn = {
-    "rte" : rte_pv_fn
+    "rte" : rte_pv_fn,
 }
 
 logger = logging.getLogger(__name__)
@@ -411,8 +411,7 @@ def main():
                                              initial_sparsity=model_args.initial_sparsity,
                                              )
                 recursive_setattr(model, n, masked_linear)
-        print(f"Initial sparsity: {calculate_sparsity(model)}", end="\n\n\n")
-
+        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
         sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
@@ -479,11 +478,11 @@ def main():
         if label_to_id is not None and "label" in examples:
             result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         if data_args.cloze_task:
-            answer_token_id = tokenizer.convert_tokens_to_ids(ANSWER_TOKEN)
             result["label"] = tokenizer.convert_tokens_to_ids(examples["label"])
         return result
 
     if data_args.cloze_task:
+        tokenizer.add_special_tokens({"additional_special_tokens": [ANSWER_TOKEN]})
         pv_fn = task_to_pv_fn[data_args.task_name]
         def pattern_verbalizer(examples):
             # turn examples into pvp format, depending on the task
@@ -589,6 +588,7 @@ def main():
     if data_args.cloze_task:
         data_collator = DataCollatorForClozeTask(tokenizer)
 
+    #TODO: have README.md report best accuracy
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
@@ -621,6 +621,7 @@ def main():
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
         trainer.save_state()
+    print(f"\n\n ========== Final sparsity: {calculate_sparsity(model)} ==========\n\n")
 
     # Evaluation
     if training_args.do_eval:

@@ -7,7 +7,7 @@ from transformers import PreTrainedTokenizerBase
 from transformers.data.data_collator import DataCollatorMixin, _torch_collate_batch
 
 
-ANSWER_TOKEN = "_"
+ANSWER_TOKEN = "[ANSWER]"
 
 
 @dataclass
