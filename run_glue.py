@@ -73,6 +73,7 @@ task_to_keys = {
 
 task_to_pv_fn = {
     "rte" : rte_pv_fn,
+    "mrpc" : rte_pv_fn,  # FIXME: for now
 }
 
 logger = logging.getLogger(__name__)
