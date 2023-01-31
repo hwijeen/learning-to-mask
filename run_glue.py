@@ -542,6 +542,9 @@ def main():
         metric = evaluate.load("glue", data_args.task_name)
     else:
         metric = evaluate.load("accuracy")
+    #FIXME: in order to calculate F1, label needs to be 0 or 1
+    if data_args.task_name == "mrpc":
+        metric = evaluate.load("accuracy")
 
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
