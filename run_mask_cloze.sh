@@ -12,10 +12,10 @@ CUDA_VISIBLE_DEVICES=1 python run_glue.py \
   --per_device_train_batch_size ${bz[$task]} \
   --learning_rate ${lr[$task]} \
   --num_train_epochs 10 \
-  --output_dir outs/$task \
+  --output_dir outs/mask_cloze/$task \
   --logging_steps 10 \
   --report_to tensorboard \
-  --logging_dir logs/$task \
+  --logging_dir logs/mask_cloze/$task \
   --evaluation_strategy steps \
   --eval_steps 100 \
   --save_strategy steps \
@@ -23,4 +23,5 @@ CUDA_VISIBLE_DEVICES=1 python run_glue.py \
   --load_best_model_at_end \
   --metric_for_best_model accuracy \
   --overwrite_output_dir \
-  --initial_sparsity 0.05
+  --initial_sparsity 0.05 \
+  --cloze_task
