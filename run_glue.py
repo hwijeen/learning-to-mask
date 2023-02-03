@@ -51,7 +51,7 @@ from transformers.utils.versions import require_version
 
 from layers import MaskedLinear
 from utils import recursive_setattr, calculate_sparsity, chain
-from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, DataCollatorForClozeTask, ANSWER_TOKEN
+from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, cola_pv_fn, DataCollatorForClozeTask, ANSWER_TOKEN
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -75,6 +75,7 @@ task_to_pv_fn = {
     "rte" : rte_pv_fn,
     "mrpc" : rte_pv_fn,  # FIXME: for now
     "sst2" : sst2_pv_fn,
+    "cola" : cola_pv_fn,
 }
 
 logger = logging.getLogger(__name__)

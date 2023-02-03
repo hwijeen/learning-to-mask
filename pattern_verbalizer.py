@@ -73,3 +73,19 @@ def sst2_pv_fn(sent1s, sent2s=None, labels=None):
 
     return formatted_sent1s, None, formatted_labels
 
+
+def cola_pv_fn(sent1s, sent2s=None, labels=None):
+    sent1_format = "{}. Is this grammatical sentence? {}."
+    formatted_sent1s = []
+    verbalizer = {
+            0: "Yes",
+            1: "No",
+            -1: "dummy",  # test data
+            }
+    formatted_labels  = []
+    for sent1, label in zip(sent1s, labels):
+        assert ANSWER_TOKEN not in sent1
+        formatted_sent1s.append(sent1_format.format(sent1, ANSWER_TOKEN))
+        formatted_labels.append(verbalizer[label])
+
+    return formatted_sent1s, None, formatted_labels
