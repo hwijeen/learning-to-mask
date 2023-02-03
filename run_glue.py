@@ -51,7 +51,7 @@ from transformers.utils.versions import require_version
 
 from layers import MaskedLinear
 from utils import recursive_setattr, calculate_sparsity, chain
-from pattern_verbalizer import rte_pv_fn, DataCollatorForClozeTask, ANSWER_TOKEN
+from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, DataCollatorForClozeTask, ANSWER_TOKEN
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -74,6 +74,7 @@ task_to_keys = {
 task_to_pv_fn = {
     "rte" : rte_pv_fn,
     "mrpc" : rte_pv_fn,  # FIXME: for now
+    "sst2" : sst2_pv_fn,
 }
 
 logger = logging.getLogger(__name__)
@@ -492,7 +493,8 @@ def main():
             labels = examples["label"]
             sent1s, sent2s, labels = pv_fn(sent1s, sent2s, labels)
             examples[sentence1_key] = sent1s
-            examples[sentence2_key] = sent2s
+            if sentence2_key is not None:
+                examples[sentence2_key] = sent2s
             examples["label"] = labels
             return examples
         preprocess_function = chain(pattern_verbalizer, preprocess_function)
@@ -625,7 +627,8 @@ def main():
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
         trainer.save_state()
-    print(f"\n\n ========== Final sparsity: {calculate_sparsity(model)} ==========\n\n")
+    if model_args.initial_sparsity != 0.0:
+        print(f"\n\n ========== Final sparsity: {calculate_sparsity(model)} ==========\n\n")
 
     # Evaluation
     if training_args.do_eval:

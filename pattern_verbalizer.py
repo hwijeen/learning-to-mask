@@ -56,8 +56,20 @@ def rte_pv_fn(sent1s, sent2s, labels=None):
 
     return formatted_sent1s, formatted_sent2s, formatted_labels
 
-#     return ['"', text_b, '" ?'], [self.mask, ', "', text_a, '"']
-#         # return [text_b, '?'], [self.mask, ',', text_a]
-#         # return ['"', text_b, '" ?'], [self.mask, '. "', text_a, '"']
-#         # return [text_b, '?'], [self.mask, '.', text_a]
-#         # return [text_a, ' question: ', self.shortenable(example.text_b), ' True or False? answer:', self.mask], []
+
+def sst2_pv_fn(sent1s, sent2s=None, labels=None):
+    sent1_format = "It was {}. {}"
+    formatted_sent1s = []
+    verbalizer = {
+            0: "bad",
+            1: "good",
+            -1: "dummy",  # test data
+            }
+    formatted_labels  = []
+    for sent1, label in zip(sent1s, labels):
+        assert ANSWER_TOKEN not in sent1
+        formatted_sent1s.append(sent1_format.format(ANSWER_TOKEN, sent1))
+        formatted_labels.append(verbalizer[label])
+
+    return formatted_sent1s, None, formatted_labels
+
