@@ -51,7 +51,7 @@ from transformers.utils.versions import require_version
 
 from layers import MaskedLinear
 from utils import recursive_setattr, calculate_sparsity, chain
-from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, cola_pv_fn, DataCollatorForClozeTask, ANSWER_TOKEN
+from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, cola_pv_fn, qqp_pv_fn, qnli_pv_fn, mnli_pv_fn_2, DataCollatorForClozeTask, ANSWER_TOKEN
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -76,6 +76,9 @@ task_to_pv_fn = {
     "mrpc" : rte_pv_fn,  # FIXME: for now
     "sst2" : sst2_pv_fn,
     "cola" : cola_pv_fn,
+    "qqp" : qqp_pv_fn,
+    "qnli": qnli_pv_fn,
+    "mnli": mnli_pv_fn_2,
 }
 
 logger = logging.getLogger(__name__)
@@ -500,9 +503,16 @@ def main():
             return examples
         preprocess_function = chain(pattern_verbalizer, preprocess_function)
         raw_datasets["train"].features["label"] = Value(dtype='int32', id=None)
-        raw_datasets["validation"].features["label"] = Value(dtype='int32', id=None)
+        if data_args.task_name == "mnli":
+            raw_datasets["validation_matched"].features["label"] = Value(dtype='int32', id=None)
+            raw_datasets["validation_mismatched"].features["label"] = Value(dtype='int32', id=None)
+        else:
+            raw_datasets["validation"].features["label"] = Value(dtype='int32', id=None)
         if "test" in raw_datasets:
             raw_datasets["test"].features["label"] = Value(dtype='int32', id=None)
+        if data_args.task_name == "mnli":  # mnli always has test
+            raw_datasets["test_matched"].features["label"] = Value(dtype='int32', id=None)
+            raw_datasets["test_mismatched"].features["label"] = Value(dtype='int32', id=None)
 
     with training_args.main_process_first(desc="dataset map pre-processing"):
         raw_datasets = raw_datasets.map(
@@ -546,7 +556,7 @@ def main():
     else:
         metric = evaluate.load("accuracy")
     #FIXME: in order to calculate F1, label needs to be 0 or 1
-    if data_args.task_name == "mrpc":
+    if data_args.task_name in ["mrpc", "qqp", "mnli"]:
         metric = evaluate.load("accuracy")
 
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a

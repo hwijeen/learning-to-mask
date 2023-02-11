@@ -75,11 +75,11 @@ def sst2_pv_fn(sent1s, sent2s=None, labels=None):
 
 
 def cola_pv_fn(sent1s, sent2s=None, labels=None):
-    sent1_format = "{}. Is this grammatical sentence? {}."
+    sent1_format = "{} Is this a grammatical sentence? {}."
     formatted_sent1s = []
     verbalizer = {
-            0: "Yes",
-            1: "No",
+            0: "No",
+            1: "Yes",
             -1: "dummy",  # test data
             }
     formatted_labels  = []
@@ -89,3 +89,81 @@ def cola_pv_fn(sent1s, sent2s=None, labels=None):
         formatted_labels.append(verbalizer[label])
 
     return formatted_sent1s, None, formatted_labels
+
+
+def qqp_pv_fn(sent1s, sent2s, labels=None):
+    sent1_format = "Are the following sentences paraphrases? {}. {}"
+    sent2_format = "{}"
+    formatted_sent1s, formatted_sent2s = [], []
+    verbalizer = {
+            0: "No",
+            1: "Yes",
+            -1: "dummy",  # test data
+            }
+    formatted_labels  = []
+    for sent1, sent2, label in zip(sent1s, sent2s, labels):
+        assert ANSWER_TOKEN not in sent1 and ANSWER_TOKEN not in sent2
+        formatted_sent1s.append(sent1_format.format(ANSWER_TOKEN, sent1))
+        formatted_sent2s.append(sent2_format.format(sent2))
+        formatted_labels.append(verbalizer[label])
+
+    return formatted_sent1s, formatted_sent2s, formatted_labels
+
+
+def qnli_pv_fn(sent1s, sent2s, labels=None):
+    sent1_format = "Does the context contain answer to the question? {}. Question: {}"
+    sent2_format = "Context: {}"
+    formatted_sent1s, formatted_sent2s = [], []
+    verbalizer = {
+            0: "No",
+            1: "Yes",
+            -1: "dummy",  # test data
+            }
+    formatted_labels  = []
+    for sent1, sent2, label in zip(sent1s, sent2s, labels):
+        assert ANSWER_TOKEN not in sent1 and ANSWER_TOKEN not in sent2
+        formatted_sent1s.append(sent1_format.format(ANSWER_TOKEN, sent1))
+        formatted_sent2s.append(sent2_format.format(sent2))
+        formatted_labels.append(verbalizer[label])
+
+    return formatted_sent1s, formatted_sent2s, formatted_labels
+
+
+def mnli_pv_fn_1(sent1s, sent2s, labels=None):
+    sent1_format = "{}?"
+    sent2_format = "{}, {}"
+    formatted_sent1s, formatted_sent2s = [], []
+    verbalizer = {
+            0: "Yes",
+            1: "?",
+            2: "No",
+            -1: "dummy",  # test data
+            }
+    formatted_labels  = []
+    for sent1, sent2, label in zip(sent1s, sent2s, labels):
+        assert ANSWER_TOKEN not in sent1 and ANSWER_TOKEN not in sent2
+        formatted_sent1s.append(sent1_format.format(sent1))
+        formatted_sent2s.append(sent2_format.format(ANSWER_TOKEN, sent2))
+        formatted_labels.append(verbalizer[label])
+
+    return formatted_sent1s, formatted_sent2s, formatted_labels
+
+
+def mnli_pv_fn_2(sent1s, sent2s, labels=None):
+    sent1_format = "Does the premise entail the hypothesis? {}. Premise: {}"
+    sent2_format = "Hypothesis: {}"
+    formatted_sent1s, formatted_sent2s = [], []
+    verbalizer = {
+            0: "Yes",
+            1: "Neutral",  # FIXME: doesn't really make sense
+            2: "No",
+            -1: "dummy",  # test data
+            }
+    formatted_labels  = []
+    for sent1, sent2, label in zip(sent1s, sent2s, labels):
+        assert ANSWER_TOKEN not in sent1 and ANSWER_TOKEN not in sent2
+        formatted_sent1s.append(sent1_format.format(ANSWER_TOKEN, sent1))
+        formatted_sent2s.append(sent2_format.format(sent2))
+        formatted_labels.append(verbalizer[label])
+
+    return formatted_sent1s, formatted_sent2s, formatted_labels
