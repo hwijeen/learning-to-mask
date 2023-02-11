@@ -3,7 +3,7 @@ export task=$1
 declare -A bz=( ["mrpc"]=32 ["rte"]=32 ["cola"]=32 ["sst2"]=128 ["qnli"]=128 )
 declare -A lr=(["mrpc"]=1e-5 ["rte"]=1e-5 ["cola"]=1e-5 ["sst2"]=1e-5 ["qnli"]=7e-4 )
 
-CUDA_VISIBLE_DEVICES=1 python run_glue.py \
+CUDA_VISIBLE_DEVICES=0 python run_glue.py \
   --model_name_or_path bert-base-cased \
   --task_name $task \
   --do_train \
