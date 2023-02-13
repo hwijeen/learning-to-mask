@@ -408,6 +408,8 @@ def main():
             ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
         )
     if model_args.initial_sparsity != 0.0:
+        for n, p in model.named_parameters():
+            p.requires_grad = False
         for n, m in model.named_modules():
             if isinstance(m, nn.Linear):
                 masked_linear = MaskedLinear(m.weight,
@@ -416,6 +418,8 @@ def main():
                                              threshold=model_args.threshold,
                                              initial_sparsity=model_args.initial_sparsity,
                                              )
+                masked_linear.mask_real.requires_grad = True
+                masked_linear.bias.requires_grad = False
                 recursive_setattr(model, n, masked_linear)
         print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
     # Preprocessing the raw_datasets
