@@ -1,6 +1,6 @@
 #!/bin/bash
 export task=$1
-declare -A lr=(["mrpc"]=1e-5 ["rte"]=1e-4 ["cola"]=1e-5 ["sst2"]=2e-5 ["qnli"]=1e-5 ["qqp"]=1e-5 ["stsb"]=1e-5 ["mnli"]=2e-5)
+declare -A lr=(["mrpc"]=5e-4 ["rte"]=1e-4 ["cola"]=5e-4 ["sst2"]=5e-4 ["qnli"]=5e-4 ["qqp"]=5e-4 ["stsb"]=1e-5 ["mnli"]=5e-4)
 declare -A metrics=(["mrpc"]=accuracy ["rte"]=accuracy ["cola"]=matthews_correlation ["sst2"]=accuracy ["qnli"]=accuracy ["qqp"]=accuracy ["stsb"]=pearson ["mnli"]=accuracy)
 declare -A eval_steps=(["mrpc"]=100 ["rte"]=100 ["cola"]=100 ["sst2"]=100 ["qnli"]=1000 ["qqp"]=1000 ["stsb"]=100 ["mnli"]=1000)
 
