@@ -428,6 +428,11 @@ def main():
                 masked_linear.bias.requires_grad = False
                 recursive_setattr(model, n, masked_linear)
         print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+
+    if os.path.isdir(model_args.model_name_or_path):  # load from saved
+        print("Loading from saved model: ", model_args.model_name_or_path)
+        state_dict = torch.load(os.path.join(model_args.model_name_or_path, "pytorch_model.bin"))
+        model.load_state_dict(state_dict)
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
         sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
@@ -451,23 +456,23 @@ def main():
 
     # Some models have set the order of the labels to use, so let's make sure we do use it.
     label_to_id = None
-    if (
-        model.config.label2id != PretrainedConfig(num_labels=num_labels).label2id
-        and data_args.task_name is not None
-        and not is_regression
-    ):
-        # Some have all caps in their config, some don't.
-        label_name_to_id = {k.lower(): v for k, v in model.config.label2id.items()}
-        if list(sorted(label_name_to_id.keys())) == list(sorted(label_list)):
-            label_to_id = {i: int(label_name_to_id[label_list[i]]) for i in range(num_labels)}
-        else:
-            logger.warning(
-                "Your model seems to have been trained with labels, but they don't match the dataset: ",
-                f"model labels: {list(sorted(label_name_to_id.keys()))}, dataset labels: {list(sorted(label_list))}."
-                "\nIgnoring the model labels as a result.",
-            )
-    elif data_args.task_name is None and not is_regression:
-        label_to_id = {v: i for i, v in enumerate(label_list)}
+    # if (
+    #     model.config.label2id != PretrainedConfig(num_labels=num_labels).label2id
+    #     and data_args.task_name is not None
+    #     and not is_regression
+    # ):
+    #     # Some have all caps in their config, some don't.
+    #     label_name_to_id = {k.lower(): v for k, v in model.config.label2id.items()}
+    #     if list(sorted(label_name_to_id.keys())) == list(sorted(label_list)):
+    #         label_to_id = {i: int(label_name_to_id[label_list[i]]) for i in range(num_labels)}
+    #     else:
+    #         logger.warning(
+    #             "Your model seems to have been trained with labels, but they don't match the dataset: ",
+    #             f"model labels: {list(sorted(label_name_to_id.keys()))}, dataset labels: {list(sorted(label_list))}."
+    #             "\nIgnoring the model labels as a result.",
+    #         )
+    # elif data_args.task_name is None and not is_regression:
+    #     label_to_id = {v: i for i, v in enumerate(label_list)}
 
     if label_to_id is not None:
         model.config.label2id = label_to_id
@@ -652,7 +657,7 @@ def main():
 
     # Initialize our Trainer
     callbacks = []
-    if model_args.initial_sparsity != 0.0:
+    if model_args.initial_sparsity != 0.0 and not os.path.isdir(model_args.model_name_or_path):
         callbacks = [ExtendedTensorBoardCallback()]
     trainer = Trainer(
         model=model,
