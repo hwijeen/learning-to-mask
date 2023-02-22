@@ -1,5 +1,7 @@
 from functools import reduce
 
+import torch
+
 from layers import MaskedLinear
 
 
@@ -32,3 +34,21 @@ def chain(*funcs):
         return reduce(lambda r, f: f(r), funcs, arg)
 
     return chained_call
+
+
+def get_mask(model):
+    mask_dict = {}
+    for n, m in model.named_modules():
+        if isinstance(m, MaskedLinear):
+            mask_dict[n] = m.mask
+    return mask_dict
+
+
+def calculate_hamming_dist(prev_mask_dict, curr_mask_dict):
+    num_changed = sum([
+        torch.sum(prev_v != curr_v).item() \
+                for prev_v, curr_v in zip(prev_mask_dict.values(), curr_mask_dict.values())
+                ])
+    num_total = sum([v.numel() for v in prev_mask_dict.values()])
+    return num_changed / num_total
+

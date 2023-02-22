@@ -44,13 +44,15 @@ from transformers import (
     default_data_collator,
     set_seed,
     EarlyStoppingCallback,
+    TrainerCallback,
 )
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
+from transformers.integrations import TensorBoardCallback
 
 from layers import MaskedLinear
-from utils import recursive_setattr, calculate_sparsity, chain
+from utils import recursive_setattr, calculate_sparsity, chain, get_mask, calculate_hamming_dist
 from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, cola_pv_fn, qqp_pv_fn, qnli_pv_fn, mnli_pv_fn_2, DataCollatorForClozeTask, ANSWER_TOKEN
 
 
@@ -222,6 +224,8 @@ class ModelArguments:
     initial_sparsity: float = field(default=0.0, metadata={"help": "Initial sparsity."})
     init_scale: float = field(default=0.02, metadata={"help": "Initial scale."})
     threshold: float = field(default=0.01, metadata={"help": "Threshold."})
+    attention_probs_dropout_prob: float = field(default=0.1, metadata={"help": "Attention probs dropout prob."})
+    hidden_dropout_prob: float = field(default=0.1, metadata={"help": "Hidden dropout prob."})
 
 
 def main():
@@ -379,6 +383,8 @@ def main():
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
+        attention_probs_dropout_prob=model_args.attention_probs_dropout_prob,
+        hidden_dropout_prob=model_args.hidden_dropout_prob,
     )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
@@ -609,7 +615,69 @@ def main():
     if data_args.cloze_task:
         data_collator = DataCollatorForClozeTask(tokenizer)
 
-    #TODO: have README.md report best accuracy
+    ##TODO: have README.md report best accuracy
+    #class PrinterCallback(TrainerCallback):
+    #        # result = getattr(callback, event)(
+    #        #     args,
+    #        #     state,
+    #        #     control,
+    #        #     model=self.model,
+    #        #     tokenizer=self.tokenizer,
+    #        #     optimizer=self.optimizer,
+    #        #     lr_scheduler=self.lr_scheduler,
+    #        #     train_dataloader=self.train_dataloader,
+    #        #     eval_dataloader=self.eval_dataloader,
+    #        #     **kwargs,
+    #        # )
+    #    def on_epoch_end(self, args, state, control, **kwargs):
+    #        model = kwargs['model']
+    #        print(f"\n\n ========== sparsity: {calculate_sparsity(model)} ==========\n\n")
+
+    #    def on_step_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    #        pass
+
+    #    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    #        pass
+
+    #    def on_train_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    #        pass
+
+    #    def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
+    #        pass
+    class ExtendedTensorBoardCallback(TensorBoardCallback):
+        """
+        Add custom metric to TensorBoard
+        report_to should not be set when using this callback
+        """
+        def on_train_begin(self, args, state, control, **kwargs):
+            if not state.is_world_process_zero:
+                return
+            self.prev_mask_dict = get_mask(model)
+            self.init_mask_dict = get_mask(model)
+
+            super().on_train_begin(args, state, control, **kwargs)
+
+        def on_log(self, args, state, control, logs=None, **kwargs):
+            if not state.is_world_process_zero:
+                return
+
+            if self.tb_writer is None:
+                self._init_summary_writer(args)
+
+            if self.tb_writer is not None:
+                model = kwargs['model']
+                mask_dict = get_mask(model)
+                sparsity = calculate_sparsity(model)
+                dist_from_prev = calculate_hamming_dist(self.prev_mask_dict, mask_dict)
+                dist_from_init = calculate_hamming_dist(self.init_mask_dict, mask_dict)
+                self.tb_writer.add_scalar("mask/chage_from_prev", dist_from_prev, state.global_step)
+                self.tb_writer.add_scalar("mask/change_from_init", dist_from_init, state.global_step)
+                self.tb_writer.add_scalar("mask/sparsity", sparsity, state.global_step)
+                self.prev_mask_dict = mask_dict
+            self.tb_writer.flush()
+
+            super().on_log(args, state, control, logs=logs, **kwargs)
+
     # Initialize our Trainer
     trainer = Trainer(
         model=model,
@@ -620,6 +688,7 @@ def main():
         tokenizer=tokenizer,
         data_collator=data_collator,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+        callbacks=[ExtendedTensorBoardCallback()],
         # callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
     )
 

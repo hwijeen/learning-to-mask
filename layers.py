@@ -100,4 +100,11 @@ class MaskedLinear(nn.Module):
 
     @property
     def num_zeros(self):
-        return self.mask_real.le(self.threshold).sum().item()
+        return self.mask_real.clone().detach().le(self.threshold).sum().item()
+
+    @property
+    def mask(self):
+        mask_binary = self.mask_real.clone().detach()
+        mask_binary[mask_binary.le(self.threshold)] = 0
+        mask_binary[mask_binary.gt(self.threshold)] = 1
+        return mask_binary  # TODO: make into actual binary tensor
