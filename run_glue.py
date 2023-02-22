@@ -616,34 +616,6 @@ def main():
         data_collator = DataCollatorForClozeTask(tokenizer)
 
     ##TODO: have README.md report best accuracy
-    #class PrinterCallback(TrainerCallback):
-    #        # result = getattr(callback, event)(
-    #        #     args,
-    #        #     state,
-    #        #     control,
-    #        #     model=self.model,
-    #        #     tokenizer=self.tokenizer,
-    #        #     optimizer=self.optimizer,
-    #        #     lr_scheduler=self.lr_scheduler,
-    #        #     train_dataloader=self.train_dataloader,
-    #        #     eval_dataloader=self.eval_dataloader,
-    #        #     **kwargs,
-    #        # )
-    #    def on_epoch_end(self, args, state, control, **kwargs):
-    #        model = kwargs['model']
-    #        print(f"\n\n ========== sparsity: {calculate_sparsity(model)} ==========\n\n")
-
-    #    def on_step_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-    #        pass
-
-    #    def on_step_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-    #        pass
-
-    #    def on_train_begin(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-    #        pass
-
-    #    def on_train_end(self, args: TrainingArguments, state: TrainerState, control: TrainerControl, **kwargs):
-    #        pass
     class ExtendedTensorBoardCallback(TensorBoardCallback):
         """
         Add custom metric to TensorBoard
@@ -679,6 +651,9 @@ def main():
             super().on_log(args, state, control, logs=logs, **kwargs)
 
     # Initialize our Trainer
+    callbacks = []
+    if model_args.initial_sparsity != 0.0:
+        callbacks = [ExtendedTensorBoardCallback()]
     trainer = Trainer(
         model=model,
         args=training_args,
@@ -688,8 +663,7 @@ def main():
         tokenizer=tokenizer,
         data_collator=data_collator,
         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-        callbacks=[ExtendedTensorBoardCallback()],
-        # callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
+        callbacks=callbacks,
     )
 
     # Training
