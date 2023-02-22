@@ -13,10 +13,10 @@ CUDA_VISIBLE_DEVICES=0 python run_glue.py \
   --per_device_train_batch_size 32 \
   --learning_rate ${lr[$task]} \
   --num_train_epochs 10 \
-  --output_dir outs/finetune/$task \
+  --output_dir outs/finetune/$task/${lr[$task]} \
   --logging_steps 10 \
   --report_to tensorboard \
-  --logging_dir logs/finetune/$task \
+  --logging_dir logs/finetune/$task/${lr[$task]} \
   --evaluation_strategy steps \
   --eval_steps ${eval_steps[$task]} \
   --save_strategy steps \
