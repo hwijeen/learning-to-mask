@@ -108,3 +108,57 @@ class MaskedLinear(nn.Module):
         mask_binary[mask_binary.le(self.threshold)] = 0
         mask_binary[mask_binary.gt(self.threshold)] = 1
         return mask_binary  # TODO: make into actual binary tensor
+
+
+class MaskedEmbedding(nn.Module):
+    def __init__(self, weight, padding_idx=None, mask_scale=2e-2, threshold=1e-2, initial_sparsity=0.1):
+        super(MaskedEmbedding, self).__init__()
+        self.weight = weight
+        self.padding_idx = padding_idx
+        self.mask_scale = mask_scale
+        self.threshold = threshold
+
+        self.mask_real = weight.data.new(self.weight.size())
+
+        left_scale = -1 * mask_scale
+        right_scale = (mask_scale + threshold) / initial_sparsity - mask_scale
+        self.mask_real.uniform_(left_scale, right_scale)
+        self.mask_real = Parameter(self.mask_real)
+
+        self.threshold_fn = Binarizer()
+
+    def forward(self, x):
+        mask_thresholded = self.threshold_fn.apply(self.mask_real, self.threshold)
+        weight_thresholded = mask_thresholded * self.weight
+        return F.embedding(x, weight_thresholded, self.padding_idx)
+
+    # .to uses this
+    def _apply(self, fn):
+        for module in self.children():
+            module._apply(fn)
+
+        for param in self._parameters.values():
+            if param is not None:
+                # Variables stored in modules are graph leaves, and we don't
+                # want to create copy nodes, so we have to unpack the data.
+                param.data = fn(param.data)
+                if param._grad is not None:
+                    param._grad.data = fn(param._grad.data)
+
+        for key, buf in self._buffers.items():
+            if buf is not None:
+                self._buffers[key] = fn(buf)
+
+        self.weight.data = fn(self.weight.data)
+
+    @property
+    def num_zeros(self):
+        return self.mask_real.clone().detach().le(self.threshold).sum().item()
+
+    @property
+    def mask(self):
+        mask_binary = self.mask_real.clone().detach()
+        mask_binary[mask_binary.le(self.threshold)] = 0
+        mask_binary[mask_binary.gt(self.threshold)] = 1
+        return mask_binary  # TODO: make into actual binary tensor
+

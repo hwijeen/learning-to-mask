@@ -51,7 +51,7 @@ from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from transformers.integrations import TensorBoardCallback
 
-from layers import MaskedLinear
+from layers import MaskedLinear, MaskedEmbedding
 from utils import recursive_setattr, calculate_sparsity, chain, get_mask, calculate_hamming_dist
 from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, cola_pv_fn, qqp_pv_fn, qnli_pv_fn, mnli_pv_fn_2, DataCollatorForClozeTask, ANSWER_TOKEN
 
@@ -77,6 +77,7 @@ task_to_pv_fn = {
     "rte" : rte_pv_fn,
     "mrpc" : rte_pv_fn,  # FIXME: for now
     "sst2" : sst2_pv_fn,
+    "imdb" : sst2_pv_fn,  # FIXME: for now
     "cola" : cola_pv_fn,
     "qqp" : qqp_pv_fn,
     "qnli": qnli_pv_fn,
@@ -312,6 +313,13 @@ def main():
             cache_dir=model_args.cache_dir,
             use_auth_token=True if model_args.use_auth_token else None,
         )
+        if data_args.dataset_name == "imdb":
+            raw_datasets["test"].task_templates.pop()
+            raw_datasets["train"].task_templates.pop()
+            raw_datasets["validation"] = raw_datasets["test"]
+            raw_datasets.pop("test")
+            # raw_datasets.pop("train")
+            raw_datasets.pop("unsupervised")
     else:
         # Loading a dataset from your local files.
         # CSV/JSON training and evaluation files are needed.
@@ -360,6 +368,10 @@ def main():
             num_labels = len(label_list)
         else:
             num_labels = 1
+    elif data_args.dataset_name == "imdb":
+        is_regresssion = False
+        num_labels = 2
+
     else:
         # Trying to have good defaults here, don't hesitate to tweak to your needs.
         is_regression = raw_datasets["train"].features["label"].dtype in ["float32", "float64"]
@@ -427,6 +439,15 @@ def main():
                 masked_linear.mask_real.requires_grad = True
                 masked_linear.bias.requires_grad = False
                 recursive_setattr(model, n, masked_linear)
+            elif isinstance(m, nn.Embedding):
+                masked_embedding = MaskedEmbedding(m.weight,
+                                                   m.padding_idx,
+                                                   mask_scale=model_args.init_scale,
+                                                   threshold=model_args.threshold,
+                                                   initial_sparsity=model_args.initial_sparsity
+                                                   )
+                masked_embedding.mask_real.requires_grad = True
+                recursive_setattr(model, n, masked_embedding)
         print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
 
     if os.path.isdir(model_args.model_name_or_path):  # load from saved
@@ -504,7 +525,8 @@ def main():
 
     if data_args.cloze_task:
         tokenizer.add_special_tokens({"additional_special_tokens": [ANSWER_TOKEN]})
-        pv_fn = task_to_pv_fn[data_args.task_name]
+        task_name = data_args.task_name if data_args.task_name is not None else data_args.dataset_name
+        pv_fn = task_to_pv_fn[task_name]
         def pattern_verbalizer(examples):
             # turn examples into pvp format, depending on the task
             sent1s = examples[sentence1_key]
@@ -629,6 +651,10 @@ def main():
         def on_train_begin(self, args, state, control, **kwargs):
             if not state.is_world_process_zero:
                 return
+            i = 2
+            while os.path.isdir(args.logging_dir):
+                args.logging_dir = args.logging_dir.replace(f"{i-1}", f"{i}")
+                i += 1
             self.prev_mask_dict = get_mask(model)
             self.init_mask_dict = get_mask(model)
 
