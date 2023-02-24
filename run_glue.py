@@ -78,6 +78,7 @@ task_to_pv_fn = {
     "mrpc" : rte_pv_fn,  # FIXME: for now
     "sst2" : sst2_pv_fn,
     "imdb" : sst2_pv_fn,  # FIXME: for now
+    "yelp_polarity" : sst2_pv_fn,  # FIXME: for now
     "cola" : cola_pv_fn,
     "qqp" : qqp_pv_fn,
     "qnli": qnli_pv_fn,
@@ -313,13 +314,13 @@ def main():
             cache_dir=model_args.cache_dir,
             use_auth_token=True if model_args.use_auth_token else None,
         )
-        if data_args.dataset_name == "imdb":
+        if data_args.dataset_name in ["imdb", "yelp_polarity"]:
             raw_datasets["test"].task_templates.pop()
             raw_datasets["train"].task_templates.pop()
             raw_datasets["validation"] = raw_datasets["test"]
             raw_datasets.pop("test")
-            # raw_datasets.pop("train")
-            raw_datasets.pop("unsupervised")
+            if data_args.task_name == "imdb":
+                raw_datasets.pop("unsupervised")
     else:
         # Loading a dataset from your local files.
         # CSV/JSON training and evaluation files are needed.
@@ -368,7 +369,7 @@ def main():
             num_labels = len(label_list)
         else:
             num_labels = 1
-    elif data_args.dataset_name == "imdb":
+    elif data_args.dataset_name in ["imdb", "yelp_polarity"]:
         is_regresssion = False
         num_labels = 2
 
