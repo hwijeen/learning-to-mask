@@ -4,6 +4,8 @@ declare -A lr=(["mrpc"]=5e-4 ["rte"]=1e-4 ["cola"]=5e-4 ["sst2"]=5e-4 ["qnli"]=5
 declare -A metrics=(["mrpc"]=accuracy ["rte"]=accuracy ["cola"]=matthews_correlation ["sst2"]=accuracy ["qnli"]=accuracy ["qqp"]=accuracy ["stsb"]=pearson ["mnli"]=accuracy)
 declare -A eval_steps=(["mrpc"]=100 ["rte"]=100 ["cola"]=100 ["sst2"]=100 ["qnli"]=1000 ["qqp"]=1000 ["stsb"]=100 ["mnli"]=1000)
 
+export sparsity=0.05
+  # --report_to tensorboard \
 CUDA_VISIBLE_DEVICES=0 python run_glue.py \
   --model_name_or_path bert-base-cased \
   --task_name $task \
@@ -13,10 +15,9 @@ CUDA_VISIBLE_DEVICES=0 python run_glue.py \
   --per_device_train_batch_size 32 \
   --learning_rate ${lr[$task]} \
   --num_train_epochs 10 \
-  --output_dir outs/mask_cloze/${task}/${lr[$task]} \
+  --output_dir outs/mask_cloze/${task}/${lr[$task]}/${sparsity} \
   --logging_steps 10 \
-  --report_to tensorboard \
-  --logging_dir logs/mask_cloze/${task}/${lr[$task]} \
+  --logging_dir logs/mask_cloze/${task}/${lr[$task]}/${sparsity} \
   --evaluation_strategy steps \
   --eval_steps ${eval_steps[$task]} \
   --save_strategy steps \
@@ -25,5 +26,5 @@ CUDA_VISIBLE_DEVICES=0 python run_glue.py \
   --load_best_model_at_end \
   --metric_for_best_model ${metrics[$task]} \
   --overwrite_output_dir \
-  --initial_sparsity 0.05 \
+  --initial_sparsity ${sparsity}\
   --cloze_task
