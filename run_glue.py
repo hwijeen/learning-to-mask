@@ -71,6 +71,7 @@ task_to_keys = {
     "sst2": ("sentence", None),
     "stsb": ("sentence1", "sentence2"),
     "wnli": ("sentence1", "sentence2"),
+    "amazon_polarity": ("content", None),
 }
 
 task_to_pv_fn = {
@@ -79,6 +80,7 @@ task_to_pv_fn = {
     "sst2" : sst2_pv_fn,
     "imdb" : sst2_pv_fn,  # FIXME: for now
     "yelp_polarity" : sst2_pv_fn,  # FIXME: for now
+    "amazon_polarity" : sst2_pv_fn,  # FIXME: for now
     "cola" : cola_pv_fn,
     "qqp" : qqp_pv_fn,
     "qnli": qnli_pv_fn,
@@ -314,6 +316,9 @@ def main():
             cache_dir=model_args.cache_dir,
             use_auth_token=True if model_args.use_auth_token else None,
         )
+        if data_args.dataset_name in ["amazon_polarity"]:
+            raw_datasets["validation"] = raw_datasets["test"]
+            raw_datasets.pop("test")
         if data_args.dataset_name in ["imdb", "yelp_polarity"]:
             raw_datasets["test"].task_templates.pop()
             raw_datasets["train"].task_templates.pop()
@@ -369,7 +374,7 @@ def main():
             num_labels = len(label_list)
         else:
             num_labels = 1
-    elif data_args.dataset_name in ["imdb", "yelp_polarity"]:
+    elif data_args.dataset_name in ["imdb", "yelp_polarity", "amazon_polarity" ]:
         is_regression = False
         num_labels = 2
 
@@ -458,6 +463,8 @@ def main():
     # Preprocessing the raw_datasets
     if data_args.task_name is not None:
         sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
+    elif data_args.dataset_name in ["amazon_polarity"]:
+        sentence1_key, sentence2_key = task_to_keys[data_args.dataset_name]
     else:
         # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
         non_label_column_names = [name for name in raw_datasets["train"].column_names if name != "label"]
