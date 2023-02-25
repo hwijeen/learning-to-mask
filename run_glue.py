@@ -319,7 +319,7 @@ def main():
             raw_datasets["train"].task_templates.pop()
             raw_datasets["validation"] = raw_datasets["test"]
             raw_datasets.pop("test")
-            if data_args.task_name == "imdb":
+            if data_args.dataset_name == "imdb":
                 raw_datasets.pop("unsupervised")
     else:
         # Loading a dataset from your local files.
@@ -370,7 +370,7 @@ def main():
         else:
             num_labels = 1
     elif data_args.dataset_name in ["imdb", "yelp_polarity"]:
-        is_regresssion = False
+        is_regression = False
         num_labels = 2
 
     else:
