@@ -85,6 +85,9 @@ task_to_pv_fn = {
     "qqp" : qqp_pv_fn,
     "qnli": qnli_pv_fn,
     "mnli": mnli_pv_fn_2,
+    "hans" : rte_pv_fn,
+    "sick" : mnli_pv_fn_2,
+    "snli" : mnli_pv_fn_2,
 }
 
 logger = logging.getLogger(__name__)
@@ -390,6 +393,9 @@ def main():
             label_list.sort()  # Let's sort it for determinism
             num_labels = len(label_list)
 
+    if not training_args.do_train and training_args.do_eval:
+        raw_datasets["validation"] = datasets.concatenate_datasets([raw_datasets["train"], raw_datasets["validation"]])
+
     # Load pretrained model and tokenizer
     #
     # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
@@ -445,15 +451,15 @@ def main():
                 masked_linear.mask_real.requires_grad = True
                 masked_linear.bias.requires_grad = False
                 recursive_setattr(model, n, masked_linear)
-            elif isinstance(m, nn.Embedding):
-                masked_embedding = MaskedEmbedding(m.weight,
-                                                   m.padding_idx,
-                                                   mask_scale=model_args.init_scale,
-                                                   threshold=model_args.threshold,
-                                                   initial_sparsity=model_args.initial_sparsity
-                                                   )
-                masked_embedding.mask_real.requires_grad = True
-                recursive_setattr(model, n, masked_embedding)
+            # elif isinstance(m, nn.Embedding):
+            #     masked_embedding = MaskedEmbedding(m.weight,
+            #                                        m.padding_idx,
+            #                                        mask_scale=model_args.init_scale,
+            #                                        threshold=model_args.threshold,
+            #                                        initial_sparsity=model_args.initial_sparsity
+            #                                        )
+            #     masked_embedding.mask_real.requires_grad = True
+            #     recursive_setattr(model, n, masked_embedding)
         print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
 
     if os.path.isdir(model_args.model_name_or_path):  # load from saved
