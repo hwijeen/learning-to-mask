@@ -21,7 +21,7 @@ CUDA_VISIBLE_DEVICES=0 python run_glue.py \
   --eval_steps ${eval_steps[$task]} \
   --save_strategy steps \
   --save_steps ${eval_steps[$task]} \
-  --save_total_limit 3 \
+  --save_total_limit 1 \
   --load_best_model_at_end \
   --metric_for_best_model ${metrics[$task]} \
   --overwrite_output_dir \
