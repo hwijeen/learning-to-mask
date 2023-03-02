@@ -667,7 +667,7 @@ def main():
                 return
             i = 2
             while os.path.isdir(args.logging_dir):
-                args.logging_dir = args.logging_dir.replace(f"{i-1}", f"{i}")
+                args.logging_dir = args.logging_dir + f"_{i}"
                 i += 1
             self.prev_mask_dict = get_mask(model)
             self.init_mask_dict = get_mask(model)
