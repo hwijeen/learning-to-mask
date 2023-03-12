@@ -18,15 +18,23 @@ def is_leaf_module(module):
 
 
 def calculate_sparsity(model):
-    zero_params = 0
-    total_params = 0
-    for n, m in model.named_modules():
-        if is_leaf_module(m):
-            if hasattr(m, "weight"):
-                total_params += m.weight.numel()
-                if isinstance(m, MaskedLinear):
-                    zero_params += m.num_zeros
-    return zero_params / total_params
+    if isinstance(model, dict):
+        zero_params = 0
+        total_params = 0
+        for k, v in model.items():
+            zero_params += torch.sum(v == 0).item()
+            total_params += v.numel()
+        return zero_params / total_params
+    else:
+        zero_params = 0
+        total_params = 0
+        for n, m in model.named_modules():
+            if is_leaf_module(m):
+                if hasattr(m, "weight"):
+                    total_params += m.weight.numel()
+                    if isinstance(m, MaskedLinear):
+                        zero_params += m.num_zeros
+        return zero_params / total_params
 
 
 def chain(*funcs):
