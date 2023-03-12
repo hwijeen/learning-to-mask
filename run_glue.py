@@ -54,6 +54,7 @@ from transformers.integrations import TensorBoardCallback
 from layers import MaskedLinear, MaskedEmbedding
 from utils import recursive_setattr, calculate_sparsity, chain, get_mask, calculate_hamming_dist
 from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, cola_pv_fn, qqp_pv_fn, qnli_pv_fn, mnli_pv_fn_2, DataCollatorForClozeTask, ANSWER_TOKEN
+from fisher import *
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -228,6 +229,7 @@ class ModelArguments:
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
+    # TODO: make this a standalone argument
     initial_sparsity: float = field(default=0.0, metadata={"help": "Initial sparsity."})
     init_scale: float = field(default=0.02, metadata={"help": "Initial scale."})
     threshold: float = field(default=0.01, metadata={"help": "Threshold."})
@@ -235,12 +237,44 @@ class ModelArguments:
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "Hidden dropout prob."})
 
 
+@dataclass
+class SparseUpdateTrainingArguments(TrainingArguments):
+    num_samples: int = field(
+        # default=1024,
+        default=100,
+        metadata={"help": "The number of samples to compute parameters importance"}
+    )
+    keep_ratio: float = field(
+        # default=0.005,
+        default=0.95,
+        metadata={"help": "The trainable parameters to total parameters."}
+    )
+    mask_method: str = field(
+        default="label-absolute",
+        metadata={"help": "The method to select trainable parameters. Format: sample_type-grad_type, \
+                   where sample_type in \{label, expect\}, and grad_type in \{absolute, square\}"}
+    )
+    normal_training: bool = field(
+        default=False,
+        metadata={"help": "Whether to use typical BERT training method."}
+    )
+    mask_path: str = field(
+        default="",
+        metadata={"help": "The path for existing mask."}
+    )
+    data_split_path: str = field(
+        default="",
+        metadata={"help": "The path for existing training data indices."}
+    )
+
+
+
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, SparseUpdateTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
@@ -437,30 +471,30 @@ def main():
             use_auth_token=True if model_args.use_auth_token else None,
             ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
         )
-    if model_args.initial_sparsity != 0.0:
-        for n, p in model.named_parameters():
-            p.requires_grad = False
-        for n, m in model.named_modules():
-            if isinstance(m, nn.Linear):
-                masked_linear = MaskedLinear(m.weight,
-                                             m.bias,
-                                             mask_scale=model_args.init_scale,
-                                             threshold=model_args.threshold,
-                                             initial_sparsity=model_args.initial_sparsity,
-                                             )
-                masked_linear.mask_real.requires_grad = True
-                masked_linear.bias.requires_grad = False
-                recursive_setattr(model, n, masked_linear)
-            # elif isinstance(m, nn.Embedding):
-            #     masked_embedding = MaskedEmbedding(m.weight,
-            #                                        m.padding_idx,
-            #                                        mask_scale=model_args.init_scale,
-            #                                        threshold=model_args.threshold,
-            #                                        initial_sparsity=model_args.initial_sparsity
-            #                                        )
-            #     masked_embedding.mask_real.requires_grad = True
-            #     recursive_setattr(model, n, masked_embedding)
-        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+    # if model_args.initial_sparsity != 0.0:
+    #     for n, p in model.named_parameters():
+    #         p.requires_grad = False
+    #     for n, m in model.named_modules():
+    #         if isinstance(m, nn.Linear):
+    #             masked_linear = MaskedLinear(m.weight,
+    #                                          m.bias,
+    #                                          mask_scale=model_args.init_scale,
+    #                                          threshold=model_args.threshold,
+    #                                          initial_sparsity=model_args.initial_sparsity,
+    #                                          )
+    #             masked_linear.mask_real.requires_grad = True
+    #             masked_linear.bias.requires_grad = False
+    #             recursive_setattr(model, n, masked_linear)
+    #         # elif isinstance(m, nn.Embedding):
+    #         #     masked_embedding = MaskedEmbedding(m.weight,
+    #         #                                        m.padding_idx,
+    #         #                                        mask_scale=model_args.init_scale,
+    #         #                                        threshold=model_args.threshold,
+    #         #                                        initial_sparsity=model_args.initial_sparsity
+    #         #                                        )
+    #         #     masked_embedding.mask_real.requires_grad = True
+    #         #     recursive_setattr(model, n, masked_embedding)
+    #     print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
 
     if os.path.isdir(model_args.model_name_or_path):  # load from saved
         print("Loading from saved model: ", model_args.model_name_or_path)
@@ -655,6 +689,76 @@ def main():
         data_collator = None
     if data_args.cloze_task:
         data_collator = DataCollatorForClozeTask(tokenizer)
+
+    # Fisher mask
+    if training_args.mask_path != "":
+        mask = torch.load(training_args.mask_path, map_location="cpu")
+    else:
+        if training_args.mask_method == "bias":
+            mask_method = create_mask_bias
+            mask = create_mask_bias(
+                model, train_dataset, data_collator, training_args.num_samples, training_args.keep_ratio
+            )
+
+        elif training_args.mask_method == "random":
+            mask_method = create_mask_random
+
+            mask = create_mask_random(
+                model, train_dataset, data_collator, training_args.num_samples, training_args.keep_ratio
+            )
+
+        else:
+            sample_type, grad_type = training_args.mask_method.split("-")
+
+            import inspect
+            signature = inspect.signature(model.forward)
+            signature_columns = list(signature.parameters.keys())
+            signature_columns += list(set(["label", "label_ids"]))
+            to_remove = list(set(train_dataset.column_names) - set(signature_columns))
+            train_dataset = train_dataset.remove_columns(to_remove)
+            # train_dataset.set_format(columns=["input_ids", "label"])
+            fisher_mask = create_mask_gradient(
+                model,
+                train_dataset,
+                data_collator,
+                training_args.num_samples,
+                training_args.keep_ratio,
+                sample_type,
+                grad_type
+            )
+            print(f"\n\nFisher mask sparsity: {calculate_sparsity(fisher_mask)}\n\n")
+
+    if model_args.initial_sparsity != 0.0:
+        for n, p in model.named_parameters():
+            p.requires_grad = False
+        for n, m in model.named_modules():
+            if isinstance(m, nn.Linear):
+                if n == "cls.predictions.decoder":
+                    mask = fisher_mask["bert.embeddings.word_embeddings.weight"]
+                else:
+                    mask = fisher_mask[n + ".weight"]
+                masked_linear = MaskedLinear(m.weight,
+                                             m.bias,
+                                             mask_scale=model_args.init_scale,
+                                             threshold=model_args.threshold,
+                                             initial_sparsity=model_args.initial_sparsity,
+                                             mask=mask,
+                                             )
+                masked_linear.mask_real.requires_grad = True
+                masked_linear.bias.requires_grad = False
+                recursive_setattr(model, n, masked_linear)
+            # elif isinstance(m, nn.Embedding):
+            #     masked_embedding = MaskedEmbedding(m.weight,
+            #                                        m.padding_idx,
+            #                                        mask_scale=model_args.init_scale,
+            #                                        threshold=model_args.threshold,
+            #                                        initial_sparsity=model_args.initial_sparsity
+            #                                        )
+            #     masked_embedding.mask_real.requires_grad = True
+            #     recursive_setattr(model, n, masked_embedding)
+        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+
+    #
 
     ##TODO: have README.md report best accuracy
     class ExtendedTensorBoardCallback(TensorBoardCallback):

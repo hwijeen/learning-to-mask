@@ -41,7 +41,8 @@ class MaskedLinear(nn.Module):
     def __init__(self, weight: Tensor, bias: Tensor,
                  mask_init: str = 'uniform', mask_scale: float = 2e-2,
                  threshold_fn:str = 'binarizer', threshold: float = 1e-2,
-                 initial_sparsity: float = 0.1, device=None, dtype=None) -> None:
+                 initial_sparsity: float = 0.1, device=None, dtype=None,
+                 mask=None) -> None:
         super().__init__()  # call grandparent's init
         self.weight = weight
         self.bias = bias
@@ -51,18 +52,28 @@ class MaskedLinear(nn.Module):
         self.threshold = threshold
         self.initial_sparsity = initial_sparsity
 
-        # Initialize real-valued mask weights.
-        self.mask_real = self.weight.data.new(self.weight.size())
-        if mask_init == '1s':
-            self.mask_real.fill_(mask_scale)
-        elif mask_init == 'uniform':
-            # set right scale so that threhold equals initial_spasity
-            left_scale = -1 * mask_scale
-            right_scale = (mask_scale + threshold) / initial_sparsity - mask_scale
-            # self.mask_real.uniform_(-1 * mask_scale, mask_scale)
-            self.mask_real.uniform_(left_scale, right_scale)
-        # mask_real is now a trainable parameter.
-        self.mask_real = Parameter(self.mask_real)
+
+        if mask is not None:
+            self.mask_real = self.weight.data.new(self.weight.size())
+            zero_real = torch.empty(mask.shape).uniform_(-self.mask_scale, self.threshold)
+            one_real = torch.empty(mask.shape).uniform_(self.threshold, self.mask_scale)
+            self.mask_real = self.weight.data.new(self.weight.size())
+            self.mask_real.masked_scatter_(mask == 0, zero_real)
+            self.mask_real.masked_scatter_(mask == 1, one_real)
+            self.mask_real = Parameter(self.mask_real)
+        else:
+            # Initialize real-valued mask weights.
+            self.mask_real = self.weight.data.new(self.weight.size())
+            if mask_init == '1s':
+                self.mask_real.fill_(mask_scale)
+            elif mask_init == 'uniform':
+                # set right scale so that threhold equals initial_spasity
+                left_scale = -1 * mask_scale
+                right_scale = (mask_scale + threshold) / initial_sparsity - mask_scale
+                # self.mask_real.uniform_(-1 * mask_scale, mask_scale)
+                self.mask_real.uniform_(left_scale, right_scale)
+            # mask_real is now a trainable parameter.
+            self.mask_real = Parameter(self.mask_real)
 
         # Initialize the thresholder.
         if threshold_fn == 'binarizer':
