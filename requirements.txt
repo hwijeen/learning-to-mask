@@ -69,7 +69,6 @@ scikit-learn==1.2.1
 scipy==1.10.0
 shtab==1.5.8
 six==1.16.0
-sklearn==0.0.post2
 stack-data==0.6.2
 tensorboard==2.11.2
 tensorboard-data-server==0.6.1
