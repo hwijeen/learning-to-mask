@@ -26,5 +26,5 @@ python run_glue.py \
   --metric_for_best_model ${metrics[$task]} \
   --overwrite_output_dir \
   --initial_sparsity ${sparsity} \
-  --num_samples 1024 \
+  --num_samples 256 \
   --cloze_task
