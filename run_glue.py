@@ -244,11 +244,11 @@ class SparseUpdateTrainingArguments(TrainingArguments):
         default=100,
         metadata={"help": "The number of samples to compute parameters importance"}
     )
-    keep_ratio: float = field(
-        # default=0.005,
-        default=0.95,
-        metadata={"help": "The trainable parameters to total parameters."}
-    )
+    # keep_ratio: float = field(
+    #     # default=0.005,
+    #     default=0.95,
+    #     metadata={"help": "The trainable parameters to total parameters."}
+    # )
     mask_method: str = field(
         default="label-absolute",
         metadata={"help": "The method to select trainable parameters. Format: sample_type-grad_type, \
@@ -691,20 +691,21 @@ def main():
         data_collator = DataCollatorForClozeTask(tokenizer)
 
     # Fisher mask
+    keep_ratio = 1.0 - model_args.initial_sparsity
     if training_args.mask_path != "":
         mask = torch.load(training_args.mask_path, map_location="cpu")
     else:
         if training_args.mask_method == "bias":
             mask_method = create_mask_bias
             mask = create_mask_bias(
-                model, train_dataset, data_collator, training_args.num_samples, training_args.keep_ratio
+                model, train_dataset, data_collator, training_args.num_samples, keep_ratio
             )
 
         elif training_args.mask_method == "random":
             mask_method = create_mask_random
 
             mask = create_mask_random(
-                model, train_dataset, data_collator, training_args.num_samples, training_args.keep_ratio
+                model, train_dataset, data_collator, training_args.num_samples, keep_ratio
             )
 
         else:
@@ -722,7 +723,7 @@ def main():
                 train_dataset,
                 data_collator,
                 training_args.num_samples,
-                training_args.keep_ratio,
+                keep_ratio,
                 sample_type,
                 grad_type
             )
