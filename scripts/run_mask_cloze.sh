@@ -5,10 +5,9 @@ declare -A metrics=(["mrpc"]=accuracy ["rte"]=accuracy ["cola"]=matthews_correla
 declare -A eval_steps=(["mrpc"]=100 ["rte"]=100 ["cola"]=100 ["sst2"]=100 ["qnli"]=1000 ["qqp"]=1000 ["stsb"]=100 ["mnli"]=1000)
 
 export sparsity=$2
-  # --report_to tensorboard \
-CUDA_VISIBLE_DEVICES=0 python run_glue.py \
+python run_glue.py \
   --model_name_or_path bert-base-cased \
-  --task_name $task \
+  --dataset_name $task \
   --do_train \
   --do_eval \
   --max_seq_length 128 \
