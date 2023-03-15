@@ -241,7 +241,7 @@ class ModelArguments:
 class SparseUpdateTrainingArguments(TrainingArguments):
     num_samples: int = field(
         # default=1024,
-        default=100,
+        default=0,
         metadata={"help": "The number of samples to compute parameters importance"}
     )
     # keep_ratio: float = field(
@@ -691,53 +691,57 @@ def main():
         data_collator = DataCollatorForClozeTask(tokenizer)
 
     # Fisher mask
-    keep_ratio = 1.0 - model_args.initial_sparsity
-    if training_args.mask_path != "":
-        mask = torch.load(training_args.mask_path, map_location="cpu")
-    else:
-        if training_args.mask_method == "bias":
-            mask_method = create_mask_bias
-            mask = create_mask_bias(
-                model, train_dataset, data_collator, training_args.num_samples, keep_ratio
-            )
-
-        elif training_args.mask_method == "random":
-            mask_method = create_mask_random
-
-            mask = create_mask_random(
-                model, train_dataset, data_collator, training_args.num_samples, keep_ratio
-            )
-
+    fisher_mask = None
+    if training_args.num_samples != 0:
+        keep_ratio = 1.0 - model_args.initial_sparsity
+        if training_args.mask_path != "":
+            mask = torch.load(training_args.mask_path, map_location="cpu")
         else:
-            sample_type, grad_type = training_args.mask_method.split("-")
+            if training_args.mask_method == "bias":
+                mask_method = create_mask_bias
+                mask = create_mask_bias(
+                    model, train_dataset, data_collator, training_args.num_samples, keep_ratio
+                )
 
-            import inspect
-            signature = inspect.signature(model.forward)
-            signature_columns = list(signature.parameters.keys())
-            signature_columns += list(set(["label", "label_ids"]))
-            to_remove = list(set(train_dataset.column_names) - set(signature_columns))
-            train_dataset = train_dataset.remove_columns(to_remove)
-            # train_dataset.set_format(columns=["input_ids", "label"])
-            fisher_mask = create_mask_gradient(
-                model,
-                train_dataset,
-                data_collator,
-                training_args.num_samples,
-                keep_ratio,
-                sample_type,
-                grad_type
-            )
-            print(f"\n\nFisher mask sparsity: {calculate_sparsity(fisher_mask)}\n\n")
+            elif training_args.mask_method == "random":
+                mask_method = create_mask_random
+
+                mask = create_mask_random(
+                    model, train_dataset, data_collator, training_args.num_samples, keep_ratio
+                )
+
+            else:
+                sample_type, grad_type = training_args.mask_method.split("-")
+
+                import inspect
+                signature = inspect.signature(model.forward)
+                signature_columns = list(signature.parameters.keys())
+                signature_columns += list(set(["label", "label_ids"]))
+                to_remove = list(set(train_dataset.column_names) - set(signature_columns))
+                train_dataset = train_dataset.remove_columns(to_remove)
+                # train_dataset.set_format(columns=["input_ids", "label"])
+                fisher_mask = create_mask_gradient(
+                    model,
+                    train_dataset,
+                    data_collator,
+                    training_args.num_samples,
+                    keep_ratio,
+                    sample_type,
+                    grad_type
+                )
+                print(f"\n\nFisher mask sparsity: {calculate_sparsity(fisher_mask)}\n\n")
 
     if model_args.initial_sparsity != 0.0:
         for n, p in model.named_parameters():
             p.requires_grad = False
         for n, m in model.named_modules():
             if isinstance(m, nn.Linear):
-                if n == "cls.predictions.decoder":
-                    mask = fisher_mask["bert.embeddings.word_embeddings.weight"]
-                else:
-                    mask = fisher_mask[n + ".weight"]
+                mask = None
+                if fisher_mask is not None:
+                    if n == "cls.predictions.decoder":
+                        mask = fisher_mask["bert.embeddings.word_embeddings.weight"]
+                    else:
+                        mask = fisher_mask[n + ".weight"]
                 masked_linear = MaskedLinear(m.weight,
                                              m.bias,
                                              mask_scale=model_args.init_scale,
