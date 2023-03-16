@@ -338,7 +338,8 @@ def main():
     #
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
-    if data_args.dataset_name in not None:
+    training_args.report_to = None
+    if data_args.dataset_name is not None:
         if data_args.dataset_name in glue_tasks:
             task_data = ("glue", data_args.dataset_name)
         else:
@@ -802,6 +803,7 @@ def main():
             super().on_log(args, state, control, logs=logs, **kwargs)
 
     # Initialize our Trainer
+    import ipdb; ipdb.set_trace(context=10)
     callbacks = []
     if model_args.initial_sparsity != 0.0 and not os.path.isdir(model_args.model_name_or_path):
         callbacks = [ExtendedTensorBoardCallback()]
