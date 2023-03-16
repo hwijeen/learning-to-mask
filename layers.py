@@ -55,8 +55,10 @@ class MaskedLinear(nn.Module):
 
         if mask is not None:
             self.mask_real = self.weight.data.new(self.weight.size())
-            zero_real = torch.empty(mask.shape).uniform_(-self.mask_scale, self.threshold)
-            one_real = torch.empty(mask.shape).uniform_(self.threshold, self.mask_scale)
+            left_scale = -1 * mask_scale
+            right_scale = (mask_scale + threshold) / initial_sparsity - mask_scale
+            zero_real = torch.empty(mask.shape).uniform_(left_scale, self.threshold)
+            one_real = torch.empty(mask.shape).uniform_(self.threshold, right_scale)
             self.mask_real = self.weight.data.new(self.weight.size())
             self.mask_real.masked_scatter_(mask == 0, zero_real)
             self.mask_real.masked_scatter_(mask == 1, one_real)

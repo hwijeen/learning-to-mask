@@ -150,7 +150,8 @@ def create_mask_gradient(model, train_dataset, data_collator, num_samples, keep_
 
     for k, v in gradients.items():
         # don't count classifier layer, they should be all trainable
-        if "classifier" in k:
+        # if "classifier" in k:
+        if "embeddings" in k:
             classifier_size += torch.prod(torch.tensor(v.shape)).item()
             classifier_mask_dict[k] = torch.ones_like(v).to(original_device)
         else:
