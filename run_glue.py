@@ -63,6 +63,7 @@ check_min_version("4.26.0.dev0")
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/text-classification/requirements.txt")
 
 glue_tasks = ["cola", "mnli", "mrpc", "qnli", "qqp", "rte", "sst2"]
+etc_tasks = ["snli", "sick"]
 task_to_keys = {
     "cola": ("sentence", None),
     "mnli": ("premise", "hypothesis"),
@@ -73,6 +74,8 @@ task_to_keys = {
     "sst2": ("sentence", None),
     "stsb": ("sentence1", "sentence2"),
     "wnli": ("sentence1", "sentence2"),
+    "snli": ("premise", "hypothesis"),
+    "sick": ("sentence_A", "sentence_B"),
 }
 
 task_to_pv_fn = {
@@ -424,7 +427,10 @@ def main():
             num_labels = len(label_list)
 
     if not training_args.do_train and training_args.do_eval:
-        raw_datasets["validation"] = datasets.concatenate_datasets([raw_datasets["train"], raw_datasets["validation"]])
+        if data_args.dataset_name == "mnli":
+            raw_datasets["validation"] = raw_datasets["validation_mismatched"]
+        else:
+            raw_datasets["validation"] = datasets.concatenate_datasets([raw_datasets["train"], raw_datasets["validation"]])
 
     # Load pretrained model and tokenizer
     #
@@ -497,7 +503,7 @@ def main():
         state_dict = torch.load(os.path.join(model_args.model_name_or_path, "pytorch_model.bin"))
         model.load_state_dict(state_dict)
     # Preprocessing the raw_datasets
-    if data_args.dataset_name in glue_tasks:
+    if data_args.dataset_name in glue_tasks or data_args.dataset_name in etc_tasks:
         sentence1_key, sentence2_key = task_to_keys[data_args.dataset_name]
     else:
         # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
