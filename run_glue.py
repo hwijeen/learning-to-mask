@@ -25,7 +25,7 @@ from typing import Optional
 
 import datasets
 import numpy as np
-from datasets import load_dataset, Value
+from datasets import load_dataset, Value, load_from_disk, DatasetDict
 import evaluate
 import torch
 import torch.nn as nn
@@ -63,7 +63,9 @@ check_min_version("4.26.0.dev0")
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/text-classification/requirements.txt")
 
 glue_tasks = ["cola", "mnli", "mrpc", "qnli", "qqp", "rte", "sst2"]
-etc_tasks = ["snli", "sick"]
+local_tasks = ["newsqa", "grammar_test"]
+etc_tasks = local_tasks + ["snli", "sick", "grammar_test"]
+local_dir = {"newsqa": "data/datasets_self_collected/qnli_ood", "grammar_test": "data/datasets_self_collected/cola_ood"}
 task_to_keys = {
     "cola": ("sentence", None),
     "mnli": ("premise", "hypothesis"),
@@ -76,6 +78,8 @@ task_to_keys = {
     "wnli": ("sentence1", "sentence2"),
     "snli": ("premise", "hypothesis"),
     "sick": ("sentence_A", "sentence_B"),
+    "newsqa": ("question", "sentence"),
+    "grammar_test": ("sentence", None)
 }
 
 task_to_pv_fn = {
@@ -346,11 +350,17 @@ def main():
         else:
             task_data = (data_args.dataset_name,)
 
-        raw_datasets = load_dataset(
-            *task_data,
-            cache_dir=model_args.cache_dir,
-            use_auth_token=True if model_args.use_auth_token else None,
-        )
+        if data_args.dataset_name in local_tasks:
+            raw_datasets = DatasetDict()
+            validation = load_from_disk(local_dir[data_args.dataset_name])
+            raw_datasets["train"] = validation  # dummy
+            raw_datasets["validation"] = validation
+        else:
+            raw_datasets = load_dataset(
+                *task_data,
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+            )
 
         if data_args.dataset_name in ["amazon_polarity"]:
             raw_datasets["validation"] = raw_datasets["test"]
@@ -403,16 +413,20 @@ def main():
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
     # Labels
-    if data_args.dataset_name is not None:
+    if data_args.dataset_name in ["imdb", "yelp_polarity", "amazon_polarity", "grammar_test", "newsqa"]:
+        is_regression = False
+        num_labels = 2
+        if data_args.dataset_name == "newsqa":
+            label_list = ["entailment", "not_entailment"]
+        # elif data_args.dataset_name == "grammar_test":
+        #     label_list = 
+    elif data_args.dataset_name is not None:
         is_regression = data_args.dataset_name == "stsb"
         if not is_regression:
             label_list = raw_datasets["train"].features["label"].names
             num_labels = len(label_list)
         else:
             num_labels = 1
-    elif data_args.dataset_name in ["imdb", "yelp_polarity", "amazon_polarity" ]:
-        is_regression = False
-        num_labels = 2
 
     else:
         # Trying to have good defaults here, don't hesitate to tweak to your needs.
@@ -525,6 +539,8 @@ def main():
 
     # Some models have set the order of the labels to use, so let's make sure we do use it.
     label_to_id = None
+    if data_args.dataset_name == "newsqa":
+        label_to_id = {v: i for i, v in enumerate(label_list)}
     # if (
     #     model.config.label2id != PretrainedConfig(num_labels=num_labels).label2id
     #     and data_args.task_name is not None
@@ -543,12 +559,12 @@ def main():
     # elif data_args.task_name is None and not is_regression:
     #     label_to_id = {v: i for i, v in enumerate(label_list)}
 
-    if label_to_id is not None:
-        model.config.label2id = label_to_id
-        model.config.id2label = {id: label for label, id in config.label2id.items()}
-    elif data_args.dataset_name is not None and not is_regression:
-        model.config.label2id = {l: i for i, l in enumerate(label_list)}
-        model.config.id2label = {id: label for label, id in config.label2id.items()}
+    # if label_to_id is not None:
+    #     model.config.label2id = label_to_id
+    #     model.config.id2label = {id: label for label, id in config.label2id.items()}
+    # elif data_args.dataset_name is not None and not is_regression:
+    #     model.config.label2id = {l: i for i, l in enumerate(label_list)}
+    #     model.config.id2label = {id: label for label, id in config.label2id.items()}
 
     if data_args.max_seq_length > tokenizer.model_max_length:
         logger.warning(
