@@ -96,6 +96,8 @@ task_to_pv_fn = {
     "hans" : rte_pv_fn,
     "sick" : mnli_pv_fn_2,
     "snli" : mnli_pv_fn_2,
+    "newsqa": qnli_pv_fn,
+    "grammar_test": cola_pv_fn,
 }
 
 logger = logging.getLogger(__name__)
@@ -487,30 +489,31 @@ def main():
             use_auth_token=True if model_args.use_auth_token else None,
             ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
         )
-    # if model_args.initial_sparsity != 0.0:
-    #     for n, p in model.named_parameters():
-    #         p.requires_grad = False
-    #     for n, m in model.named_modules():
-    #         if isinstance(m, nn.Linear):
-    #             masked_linear = MaskedLinear(m.weight,
-    #                                          m.bias,
-    #                                          mask_scale=model_args.init_scale,
-    #                                          threshold=model_args.threshold,
-    #                                          initial_sparsity=model_args.initial_sparsity,
-    #                                          )
-    #             masked_linear.mask_real.requires_grad = True
-    #             masked_linear.bias.requires_grad = False
-    #             recursive_setattr(model, n, masked_linear)
-    #         # elif isinstance(m, nn.Embedding):
-    #         #     masked_embedding = MaskedEmbedding(m.weight,
-    #         #                                        m.padding_idx,
-    #         #                                        mask_scale=model_args.init_scale,
-    #         #                                        threshold=model_args.threshold,
-    #         #                                        initial_sparsity=model_args.initial_sparsity
-    #         #                                        )
-    #         #     masked_embedding.mask_real.requires_grad = True
-    #         #     recursive_setattr(model, n, masked_embedding)
-    #     print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+
+    if os.path.isdir(model_args.model_name_or_path) and model_args.initial_sparsity != 0.0:  # load from saved
+        for n, p in model.named_parameters():
+            p.requires_grad = False
+        for n, m in model.named_modules():
+            if isinstance(m, nn.Linear):
+                masked_linear = MaskedLinear(m.weight,
+                                             m.bias,
+                                             mask_scale=model_args.init_scale,
+                                             threshold=model_args.threshold,
+                                             initial_sparsity=model_args.initial_sparsity,
+                                             )
+                masked_linear.mask_real.requires_grad = True
+                masked_linear.bias.requires_grad = False
+                recursive_setattr(model, n, masked_linear)
+            # elif isinstance(m, nn.Embedding):
+            #     masked_embedding = MaskedEmbedding(m.weight,
+            #                                        m.padding_idx,
+            #                                        mask_scale=model_args.init_scale,
+            #                                        threshold=model_args.threshold,
+            #                                        initial_sparsity=model_args.initial_sparsity
+            #                                        )
+            #     masked_embedding.mask_real.requires_grad = True
+            #     recursive_setattr(model, n, masked_embedding)
+        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
 
     if os.path.isdir(model_args.model_name_or_path):  # load from saved
         print("Loading from saved model: ", model_args.model_name_or_path)

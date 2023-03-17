@@ -23,18 +23,32 @@ for eval_t in ${eval_tasks[$task]}
 do
     if [ $model_type = "finetune" ]; then
         export model_path=/projects/tir6/strubell/hahn2/mask/outs/finetune/${task}/${ft_lr[$task]}
+		python run_glue.py \
+		  --model_name_or_path $model_path \
+		  --dataset_name $eval_t \
+		  --do_eval \
+		  --output_dir eval_result/$model_type/$task/$eval_t \
+		  --max_seq_length 128 \
+		  --initial_sparsity 0.0
     elif [ $model_type = "mask_cloze" ]; then
-        export model_path=/projects/tir6/strubell/hahn2/mask/outs/mask_cloze/${task}/${mask_lr[$task]}
+        export model_path=/projects/tir6/strubell/hahn2/mask/outs/mask_cloze/${task}/${mask_lr[$task]}/0.05
+		python run_glue.py \
+		  --model_name_or_path $model_path \
+		  --dataset_name $eval_t \
+		  --do_eval \
+		  --output_dir eval_result/$model_type/$task/$eval_t \
+		  --max_seq_length 128 \
+		  --initial_sparsity 0.05 \
+		  --cloze_task
     elif [ $model_type = "fisher" ]; then
-        export model_path=/projects/tir6/strubell/hahn2/mask/outs/fisher/${task}/${fisher_lr[$task]}
+        export model_path=/projects/tir6/strubell/hahn2/mask/outs/fisher/${task}/${fisher_lr[$task]}/0.05
+		python run_glue.py \
+		  --model_name_or_path $model_path \
+		  --dataset_name $eval_t \
+		  --do_eval \
+		  --output_dir eval_result/$model_type/$task/$eval_t \
+		  --max_seq_length 128 \
+		  --initial_sparsity 0.05 \
+		  --cloze_task
     fi
-
-    echo $model_path $eval_t
-    python run_glue.py \
-      --model_name_or_path $model_path \
-      --dataset_name $eval_t \
-      --do_eval \
-      --output_dir eval_result/$model_type/$task/$eval_t \
-      --max_seq_length 128 \
-      --initial_sparsity 0.0
 done
