@@ -419,9 +419,7 @@ def main():
         is_regression = False
         num_labels = 2
         if data_args.dataset_name == "newsqa":
-            label_list = ["entailment", "not_entailment"]
-        # elif data_args.dataset_name == "grammar_test":
-        #     label_list = 
+            label_list = ["not_entailment", "entailment"]
     elif data_args.dataset_name is not None:
         is_regression = data_args.dataset_name == "stsb"
         if not is_regression:
@@ -584,10 +582,10 @@ def main():
         result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
 
         # Map labels to IDs (not necessary for GLUE tasks)
-        if label_to_id is not None and "label" in examples:
-            result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         if data_args.cloze_task:
             result["label"] = tokenizer.convert_tokens_to_ids(examples["label"])
+        elif label_to_id is not None and "label" in examples:
+            result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         return result
 
     if data_args.cloze_task:
