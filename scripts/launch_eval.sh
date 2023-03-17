@@ -17,4 +17,4 @@ export HF_HOME=/scratch/hahn2/.cache
 
 cd /projects/tir6/strubell/hahn2/mask
 
-./scripts/run_eval.sh $1
+./scripts/run_eval.sh $1 $2
