@@ -73,7 +73,6 @@ task_to_keys = {
     "sst2": ("sentence", None),
     "stsb": ("sentence1", "sentence2"),
     "wnli": ("sentence1", "sentence2"),
-    "amazon_polarity": ("content", None),
 }
 
 task_to_pv_fn = {
@@ -498,9 +497,7 @@ def main():
         state_dict = torch.load(os.path.join(model_args.model_name_or_path, "pytorch_model.bin"))
         model.load_state_dict(state_dict)
     # Preprocessing the raw_datasets
-    if data_args.dataset_name is not None:
-        sentence1_key, sentence2_key = task_to_keys[data_args.dataset_name]
-    elif data_args.dataset_name in ["amazon_polarity"]:
+    if data_args.dataset_name in glue_tasks:
         sentence1_key, sentence2_key = task_to_keys[data_args.dataset_name]
     else:
         # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
@@ -618,7 +615,8 @@ def main():
             max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
             eval_dataset = eval_dataset.select(range(max_eval_samples))
 
-    if training_args.do_predict or data_args.dataset_name is not None or data_args.test_file is not None:
+    #  if training_args.do_predict or data_args.dataset_name is not None or data_args.test_file is not None:
+    if training_args.do_predict or data_args.test_file is not None:
         if "test" not in raw_datasets and "test_matched" not in raw_datasets:
             raise ValueError("--do_predict requires a test dataset")
         predict_dataset = raw_datasets["test_matched" if data_args.dataset_name == "mnli" else "test"]
@@ -632,7 +630,7 @@ def main():
             logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # Get the metric function
-    if data_args.dataset_name is not None:
+    if data_args.dataset_name in glue_tasks:
         metric = evaluate.load("glue", data_args.dataset_name)
     else:
         metric = evaluate.load("accuracy")
