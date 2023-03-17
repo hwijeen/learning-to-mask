@@ -1,3 +1,5 @@
 outs/
 logs/
 tir_logs/
+data/
+eval_results/
