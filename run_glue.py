@@ -443,7 +443,7 @@ def main():
     if not training_args.do_train and training_args.do_eval:
         if data_args.dataset_name == "mnli":
             raw_datasets["validation"] = raw_datasets["validation_mismatched"]
-        else:
+        elif data_args.dataset_name not in ["grammar_test", "newsqa"]:
             raw_datasets["validation"] = datasets.concatenate_datasets([raw_datasets["train"], raw_datasets["validation"]])
 
     # Load pretrained model and tokenizer
