@@ -17,4 +17,4 @@ export HF_HOME=/scratch/hahn2/.cache
 
 cd /projects/tir6/strubell/hahn2/mask
 
-./scripts/run_mask_cloze_transfer.sh $1 $2 $3
+./scripts/run_mask_cloze_transfer.sh $1 $2 $3 $4
