@@ -316,6 +316,14 @@ def main():
     )
     logger.info(f"Training/evaluation parameters {training_args}")
 
+    i = 2
+    while os.path.isdir(training_args.output_dir):
+        if training_args.output_dir.endswith(f"_{i-1}"):
+            training_args.output_dir = training_args.output_dir.replace(f"_{i-1}", f"_{i}")
+        else:
+            training_args.output_dir = training_args.output_dir + f"_{i}"
+        i += 1
+
     # Detecting last checkpoint.
     last_checkpoint = None
     if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
@@ -443,6 +451,8 @@ def main():
     if not training_args.do_train and training_args.do_eval:
         if data_args.dataset_name == "mnli":
             raw_datasets["validation"] = raw_datasets["validation_mismatched"]
+        elif data_args.dataset_name in glue_tasks:
+            pass
         elif data_args.dataset_name not in ["grammar_test", "newsqa"]:
             raw_datasets["validation"] = datasets.concatenate_datasets([raw_datasets["train"], raw_datasets["validation"]])
 
@@ -467,56 +477,7 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    if data_args.cloze_task:
-        model = AutoModelForMaskedLM.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            use_auth_token=True if model_args.use_auth_token else None,
-            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-        )
-    else:
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            use_auth_token=True if model_args.use_auth_token else None,
-            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-        )
 
-    if os.path.isdir(model_args.model_name_or_path) and model_args.initial_sparsity != 0.0:  # load from saved
-        for n, p in model.named_parameters():
-            p.requires_grad = False
-        for n, m in model.named_modules():
-            if isinstance(m, nn.Linear):
-                masked_linear = MaskedLinear(m.weight,
-                                             m.bias,
-                                             mask_scale=model_args.init_scale,
-                                             threshold=model_args.threshold,
-                                             initial_sparsity=model_args.initial_sparsity,
-                                             )
-                masked_linear.mask_real.requires_grad = True
-                masked_linear.bias.requires_grad = False
-                recursive_setattr(model, n, masked_linear)
-            # elif isinstance(m, nn.Embedding):
-            #     masked_embedding = MaskedEmbedding(m.weight,
-            #                                        m.padding_idx,
-            #                                        mask_scale=model_args.init_scale,
-            #                                        threshold=model_args.threshold,
-            #                                        initial_sparsity=model_args.initial_sparsity
-            #                                        )
-            #     masked_embedding.mask_real.requires_grad = True
-            #     recursive_setattr(model, n, masked_embedding)
-        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
-
-    if os.path.isdir(model_args.model_name_or_path):  # load from saved
-        print("Loading from saved model: ", model_args.model_name_or_path)
-        state_dict = torch.load(os.path.join(model_args.model_name_or_path, "pytorch_model.bin"))
-        model.load_state_dict(state_dict)
     # Preprocessing the raw_datasets
     if data_args.dataset_name in glue_tasks or data_args.dataset_name in etc_tasks:
         sentence1_key, sentence2_key = task_to_keys[data_args.dataset_name]
@@ -707,6 +668,60 @@ def main():
     if data_args.cloze_task:
         data_collator = DataCollatorForClozeTask(tokenizer)
 
+
+    if data_args.cloze_task:
+        model = AutoModelForMaskedLM.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
+
+    if os.path.isdir(model_args.model_name_or_path) and model_args.initial_sparsity != 0.0:  # load from saved
+        for n, p in model.named_parameters():
+            p.requires_grad = False
+        for n, m in model.named_modules():
+            if isinstance(m, nn.Linear):
+                masked_linear = MaskedLinear(m.weight,
+                                             m.bias,
+                                             mask_scale=model_args.init_scale,
+                                             threshold=model_args.threshold,
+                                             initial_sparsity=model_args.initial_sparsity,
+                                             )
+                masked_linear.mask_real.requires_grad = True
+                masked_linear.bias.requires_grad = False
+                recursive_setattr(model, n, masked_linear)
+            # elif isinstance(m, nn.Embedding):
+            #     masked_embedding = MaskedEmbedding(m.weight,
+            #                                        m.padding_idx,
+            #                                        mask_scale=model_args.init_scale,
+            #                                        threshold=model_args.threshold,
+            #                                        initial_sparsity=model_args.initial_sparsity
+            #                                        )
+            #     masked_embedding.mask_real.requires_grad = True
+            #     recursive_setattr(model, n, masked_embedding)
+        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+
+    if os.path.isdir(model_args.model_name_or_path):  # load from saved (finetune or masked)
+        print("Loading from saved model: ", model_args.model_name_or_path)
+        state_dict = torch.load(os.path.join(model_args.model_name_or_path, "pytorch_model.bin"))
+        model.load_state_dict(state_dict)
+        if model_args.initial_sparsity != 0.0:
+            print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+
     # Fisher mask
     fisher_mask = None
     if training_args.num_samples != 0:
@@ -748,7 +763,7 @@ def main():
                 )
                 print(f"\n\nFisher mask sparsity: {calculate_sparsity(fisher_mask)}\n\n")
 
-    if model_args.initial_sparsity != 0.0:
+    if model_args.initial_sparsity != 0.0 and not os.path.isdir(model_args.model_name_or_path):
         for n, p in model.named_parameters():
             p.requires_grad = False
         for n, m in model.named_modules():
@@ -793,7 +808,10 @@ def main():
                 return
             i = 2
             while os.path.isdir(args.logging_dir):
-                args.logging_dir = args.logging_dir + f"_{i}"
+                if args.logging_dir.endswith(f"_{i-1}"):
+                    args.logging_dir = args.logging_dir.replace(f"_{i-1}", f"_{i}")
+                else:
+                    args.logging_dir = args.logging_dir + f"_{i}"
                 i += 1
             self.prev_mask_dict = get_mask(model)
             self.init_mask_dict = get_mask(model)
@@ -824,7 +842,9 @@ def main():
     # Initialize our Trainer
     training_args.report_to = []
     callbacks = []
-    if model_args.initial_sparsity != 0.0 and not os.path.isdir(model_args.model_name_or_path):
+    only_eval = not training_args.do_train and training_args.do_eval
+    # if model_args.initial_sparsity != 0.0 and not os.path.isdir(model_args.model_name_or_path):
+    if model_args.initial_sparsity != 0.0 and not only_eval:
         callbacks = [ExtendedTensorBoardCallback()]
     trainer = Trainer(
         model=model,
