@@ -738,10 +738,10 @@ def main():
         for n, m in model.named_modules():
             if isinstance(m, nn.Linear):
                 mask = None
+                bias_mask = None
                 if fisher_mask is not None:
                     if n == "cls.predictions.decoder":
                         mask = fisher_mask["bert.embeddings.word_embeddings.weight"]
-                        bias_mask = None
                     else:
                         mask = fisher_mask[n + ".weight"]
                         bias_mask = fisher_mask[n + ".bias"]
@@ -792,6 +792,7 @@ def main():
             self.init_mask_dict = get_mask(model)
 
             super().on_train_begin(args, state, control, **kwargs)
+            self.on_log(args, state, control, logs={}, **kwargs)
 
         def on_log(self, args, state, control, logs=None, **kwargs):
             if not state.is_world_process_zero:

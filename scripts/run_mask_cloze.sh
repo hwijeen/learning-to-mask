@@ -1,4 +1,5 @@
 #!/bin/bash
+set +x
 export task=$1
 declare -A lr=(["mrpc"]=5e-4 ["rte"]=5e-4 ["cola"]=5e-4 ["sst2"]=5e-4 ["qnli"]=5e-4 ["qqp"]=5e-4 ["stsb"]=1e-5 ["mnli"]=5e-4)
 declare -A metrics=(["mrpc"]=accuracy ["rte"]=accuracy ["cola"]=matthews_correlation ["sst2"]=accuracy ["qnli"]=accuracy ["qqp"]=accuracy ["stsb"]=pearson ["mnli"]=accuracy)
@@ -16,9 +17,9 @@ python run_glue.py \
   --per_device_train_batch_size 32 \
   --learning_rate ${learning_rate} \
   --num_train_epochs 10 \
-  --output_dir outs/mask_cloze/${task}/${learning_rate}/${sparsity}/${seed} \
+  --output_dir outs/mask_cloze/${task}/${learning_rate}/${sparsity}/${seed}/emblin \
   --logging_steps 10 \
-  --logging_dir logs/mask_cloze/${task}/${learning_rate}/${sparsity}/${seed} \
+  --logging_dir logs/mask_cloze/${task}/${learning_rate}/${sparsity}/${seed}/emblin \
   --evaluation_strategy steps \
   --eval_steps ${eval_steps[$task]} \
   --save_strategy steps \
