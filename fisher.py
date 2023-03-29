@@ -1,3 +1,4 @@
+import inspect
 import logging
 import os
 import random
@@ -65,6 +66,8 @@ def calculate_the_importance_label(model, data_loader, num_samples, cuda_device,
             gradients_dict[name] += grad_method(param.grad).data
 
         model.zero_grad()
+    gradients_dict["cls.predictions.decoder.bias"] = gradients_dict.pop("cls.predictions.bias")
+    gradients_dict["cls.predictions.decoder.weight"] = gradients_dict["bert.embeddings.word_embeddings.weight"]
 
     return gradients_dict
 
@@ -143,26 +146,29 @@ def create_mask_gradient(model, train_dataset, data_collator, num_samples, keep_
     sizes = {}
     tensors = []
 
-    classifier_size = 0
+    # classifier_size = 0
     all_params_size = 0
 
-    classifier_mask_dict = {}
+    # classifier_mask_dict = {}
 
     for k, v in gradients.items():
         # don't count classifier layer, they should be all trainable
         # if "classifier" in k:
-        if "embeddings" in k:
-            classifier_size += torch.prod(torch.tensor(v.shape)).item()
-            classifier_mask_dict[k] = torch.ones_like(v).to(original_device)
-        else:
-            sizes[k] = v.shape
-            tensors.append(v.view(-1))
+        # if "embeddings" in k:
+        #     classifier_size += torch.prod(torch.tensor(v.shape)).item()
+        #     classifier_mask_dict[k] = torch.ones_like(v).to(original_device)
+        # else:
+        #     sizes[k] = v.shape
+        #     tensors.append(v.view(-1))
+        sizes[k] = v.shape
+        tensors.append(v.view(-1))
 
         all_params_size += torch.prod(torch.tensor(v.shape)).item()
 
     tensors = torch.cat(tensors, 0)
 
-    keep_num = int(all_params_size * keep_ratio) - classifier_size
+    # keep_num = int(all_params_size * keep_ratio) - classifier_size
+    keep_num = int(all_params_size * keep_ratio)
 
     assert keep_num > 0
 
@@ -185,25 +191,28 @@ def create_mask_gradient(model, train_dataset, data_collator, num_samples, keep_
     assert now_idx == len(masks)
 
     # Add the classifier's mask to mask_dict
-    mask_dict.update(classifier_mask_dict)
+    # mask_dict.update(classifier_mask_dict)
 
     model.to(original_device)
 
     # Print the parameters for checking
-    classifier_size = 0
+    # classifier_size = 0
     all_params_size = 0
     pretrain_weight_size = 0
     
     for k, v in mask_dict.items():
-        if "classifier" in k:
-            classifier_size += (v == 1).sum().item()
-        else:
-            pretrain_weight_size += (v == 1).sum().item()
+        # if "classifier" in k:
+        # if "embeddings" in k:
+        #     classifier_size += (v == 1).sum().item()
+        # else:
+        #     pretrain_weight_size += (v == 1).sum().item()
+        pretrain_weight_size += (v == 1).sum().item()
 
         all_params_size += torch.prod(torch.tensor(v.shape)).item()
     
-    print(pretrain_weight_size, classifier_size, all_params_size)
-    print(f"trainable parameters: {(pretrain_weight_size + classifier_size) / all_params_size * 100} %")
+    print(pretrain_weight_size, all_params_size)
+    # print(f"trainable parameters: {(pretrain_weight_size + classifier_size) / all_params_size * 100} %")
+    print(f"trainable parameters: {(pretrain_weight_size) / all_params_size * 100} %")
 
     return mask_dict
 
@@ -321,3 +330,38 @@ def create_mask_bias(model, train_dataset, data_collator, num_samples, keep_rati
 
     return mask_dict
 
+
+def get_fisher_mask(initial_sparsity, mask_method, model, dataset, data_collator, num_samples, mask_path=None):
+    keep_ratio = 1.0 - initial_sparsity
+    if mask_path != "":
+        mask = torch.load(mask_path, map_location="cpu")
+    else:
+        if mask_method == "bias":
+            mask = create_mask_bias(
+                model, dataset, data_collator, num_samples, keep_ratio
+            )
+
+        elif mask_method == "random":
+            mask = create_mask_random(
+                model, dataset, data_collator, num_samples, keep_ratio
+            )
+
+        else:
+            sample_type, grad_type = mask_method.split("-")
+
+            signature = inspect.signature(model.forward)
+            signature_columns = list(signature.parameters.keys())
+            signature_columns += list(set(["label", "label_ids"]))
+            to_remove = list(set(dataset.column_names) - set(signature_columns))
+            dataset = dataset.remove_columns(to_remove)
+            # dataset.set_format(columns=["input_ids", "label"])
+            fisher_mask = create_mask_gradient(
+                model,
+                dataset,
+                data_collator,
+                num_samples,
+                keep_ratio,
+                sample_type,
+                grad_type
+            )
+    return fisher_mask

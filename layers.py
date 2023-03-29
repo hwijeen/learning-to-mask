@@ -40,7 +40,7 @@ class MaskedLinear(nn.Module):
                  mask_init: str = 'uniform', mask_scale: float = 2e-2,
                  threshold_fn:str = 'binarizer', threshold: float = 1e-2,
                  initial_sparsity: float = 0.1, device=None, dtype=None,
-                 mask=None) -> None:
+                 mask=None, bias_mask=None) -> None:
         super().__init__()  # call grandparent's init
         self.weight = Variable(weight)
         self.bias = Variable(bias)
@@ -50,17 +50,24 @@ class MaskedLinear(nn.Module):
         self.threshold = threshold
         self.initial_sparsity = initial_sparsity
 
-
         if mask is not None:
             self.mask_real = self.weight.data.new(self.weight.size())
             left_scale = -1 * mask_scale
             right_scale = (mask_scale + threshold) / initial_sparsity - mask_scale
+
             zero_real = torch.empty(mask.shape).uniform_(left_scale, self.threshold)
             one_real = torch.empty(mask.shape).uniform_(self.threshold, right_scale)
             self.mask_real = self.weight.data.new(self.weight.size())
             self.mask_real.masked_scatter_(mask == 0, zero_real)
             self.mask_real.masked_scatter_(mask == 1, one_real)
             self.mask_real = Parameter(self.mask_real)
+
+            bias_zero_real = torch.empty(bias_mask.shape).uniform_(left_scale, self.threshold)
+            bias_one_real = torch.empty(bias_mask.shape).uniform_(self.threshold, right_scale)
+            self.bias_mask_real = self.bias.data.new(self.bias.size())
+            self.bias_mask_real.masked_scatter_(bias_mask == 0, zero_real)
+            self.bias_mask_real.masked_scatter_(bias_mask == 1, one_real)
+            self.bias_mask_real = Parameter(self.bias_mask_real)
         else:
             # Initialize real-valued mask weights.
             self.mask_real = self.weight.data.new(self.weight.size())
