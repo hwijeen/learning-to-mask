@@ -704,15 +704,15 @@ def main():
                 masked_linear.mask_real.requires_grad = True
                 masked_linear.bias.requires_grad = False
                 recursive_setattr(model, n, masked_linear)
-            # elif isinstance(m, nn.Embedding):
-            #     masked_embedding = MaskedEmbedding(m.weight,
-            #                                        m.padding_idx,
-            #                                        mask_scale=model_args.init_scale,
-            #                                        threshold=model_args.threshold,
-            #                                        initial_sparsity=model_args.initial_sparsity
-            #                                        )
-            #     masked_embedding.mask_real.requires_grad = True
-            #     recursive_setattr(model, n, masked_embedding)
+            elif isinstance(m, nn.Embedding):
+                masked_embedding = MaskedEmbedding(m.weight,
+                                                   m.padding_idx,
+                                                   mask_scale=model_args.init_scale,
+                                                   threshold=model_args.threshold,
+                                                   initial_sparsity=model_args.initial_sparsity
+                                                   )
+                masked_embedding.mask_real.requires_grad = True
+                recursive_setattr(model, n, masked_embedding)
         print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
 
     if os.path.isdir(model_args.model_name_or_path):  # load from saved (finetune or masked)
@@ -784,18 +784,17 @@ def main():
                 masked_linear.mask_real.requires_grad = True
                 masked_linear.bias.requires_grad = False
                 recursive_setattr(model, n, masked_linear)
-            # elif isinstance(m, nn.Embedding):
-            #     masked_embedding = MaskedEmbedding(m.weight,
-            #                                        m.padding_idx,
-            #                                        mask_scale=model_args.init_scale,
-            #                                        threshold=model_args.threshold,
-            #                                        initial_sparsity=model_args.initial_sparsity
-            #                                        )
-            #     masked_embedding.mask_real.requires_grad = True
-            #     recursive_setattr(model, n, masked_embedding)
+            elif isinstance(m, nn.Embedding):
+                masked_embedding = MaskedEmbedding(m.weight,
+                                                   m.padding_idx,
+                                                   mask_scale=model_args.init_scale,
+                                                   threshold=model_args.threshold,
+                                                   initial_sparsity=model_args.initial_sparsity
+                                                   )
+                masked_embedding.mask_real.requires_grad = True
+                recursive_setattr(model, n, masked_embedding)
         print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
 
-    #
 
     ##TODO: have README.md report best accuracy
     class ExtendedTensorBoardCallback(TensorBoardCallback):

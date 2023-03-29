@@ -2,7 +2,7 @@ from functools import reduce
 
 import torch
 
-from layers import MaskedLinear
+from layers import MaskedLinear, MaskedEmbedding
 
 
 def recursive_setattr(obj, attr, value):
@@ -33,6 +33,8 @@ def calculate_sparsity(model):
                 if hasattr(m, "weight"):
                     total_params += m.weight.numel()
                     if isinstance(m, MaskedLinear):
+                        zero_params += m.num_zeros
+                    if isinstance(m, MaskedEmbedding):
                         zero_params += m.num_zeros
         return zero_params / total_params
 
