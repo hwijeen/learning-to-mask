@@ -55,10 +55,9 @@ def get_mask(model):
 
 
 def calculate_hamming_dist(prev_mask_dict, curr_mask_dict):
-    num_changed = sum([
-        torch.sum(prev_v != curr_v).item() \
-                for prev_v, curr_v in zip(prev_mask_dict.values(), curr_mask_dict.values())
-                ])
+    assert set(prev_mask_dict.keys()) == set(curr_mask_dict.keys())
+    keys = prev_mask_dict.keys()
+    num_changed = sum([torch.sum(prev_mask_dict[k] != curr_mask_dict[k]).item() for k in keys])
     num_total = sum([v.numel() for v in prev_mask_dict.values()])
     return num_changed / num_total
 

@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-#SBATCH --job-name=fisher
+#SBATCH --job-name=mask
 #SBATCH --mail-type=ALL
 #SBATCH --mail-user=hahn2@cs.cmu.edu
 #SBATCH --output=/projects/tir6/strubell/hahn2/mask/tir_logs/%x-%J-%a.out

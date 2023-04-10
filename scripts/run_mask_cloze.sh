@@ -1,5 +1,5 @@
 #!/bin/bash
-set +x
+set -x
 export task=$1
 declare -A lr=(["mrpc"]=5e-4 ["rte"]=5e-4 ["cola"]=5e-4 ["sst2"]=5e-4 ["qnli"]=5e-4 ["qqp"]=5e-4 ["stsb"]=1e-5 ["mnli"]=5e-4)
 declare -A metrics=(["mrpc"]=accuracy ["rte"]=accuracy ["cola"]=matthews_correlation ["sst2"]=accuracy ["qnli"]=accuracy ["qqp"]=accuracy ["stsb"]=pearson ["mnli"]=accuracy)
@@ -29,4 +29,5 @@ python run_glue.py \
   --metric_for_best_model ${metrics[$task]} \
   --overwrite_output_dir \
   --initial_sparsity ${sparsity} \
+  --seed ${seed} \
   --cloze_task

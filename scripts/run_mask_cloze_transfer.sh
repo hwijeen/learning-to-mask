@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 export src_task=$1
 export tgt_task=$2
 declare -A lr=(["mrpc"]=5e-4 ["rte"]=5e-4 ["cola"]=5e-4 ["sst2"]=5e-4 ["qnli"]=5e-4 ["qqp"]=5e-4 ["stsb"]=1e-5 ["mnli"]=5e-4)
