@@ -75,7 +75,7 @@ def sst2_pv_fn(sent1s, sent2s=None, labels=None):
 
 
 def cola_pv_fn(sent1s, sent2s=None, labels=None):
-    sent1_format = "{} Is this a grammatical sentence? {}."
+    sent1_format = "Is the sentence a grammatical sentence? {}. Sentence: {}"
     formatted_sent1s = []
     verbalizer = {
             0: "No",
@@ -85,7 +85,7 @@ def cola_pv_fn(sent1s, sent2s=None, labels=None):
     formatted_labels  = []
     for sent1, label in zip(sent1s, labels):
         assert ANSWER_TOKEN not in sent1
-        formatted_sent1s.append(sent1_format.format(sent1, ANSWER_TOKEN))
+        formatted_sent1s.append(sent1_format.format(ANSWER_TOKEN, sent1))
         formatted_labels.append(verbalizer[label])
 
     return formatted_sent1s, None, formatted_labels
@@ -119,12 +119,19 @@ def qnli_pv_fn(sent1s, sent2s, labels=None):
             1: "Yes",
             -1: "dummy",  # test data
             }
+    verbalizer_for_newsqa = {
+            "not_entailment": "No",
+            "entailment": "Yes",
+            }
     formatted_labels  = []
     for sent1, sent2, label in zip(sent1s, sent2s, labels):
         assert ANSWER_TOKEN not in sent1 and ANSWER_TOKEN not in sent2
         formatted_sent1s.append(sent1_format.format(ANSWER_TOKEN, sent1))
         formatted_sent2s.append(sent2_format.format(sent2))
-        formatted_labels.append(verbalizer[label])
+        try:
+            formatted_labels.append(verbalizer[label])
+        except:
+            formatted_labels.append(verbalizer_for_newsqa[label])
 
     return formatted_sent1s, formatted_sent2s, formatted_labels
 

@@ -25,7 +25,7 @@ from typing import Optional
 
 import datasets
 import numpy as np
-from datasets import load_dataset, Value
+from datasets import load_dataset, Value, load_from_disk, DatasetDict
 import evaluate
 import torch
 import torch.nn as nn
@@ -54,6 +54,7 @@ from transformers.integrations import TensorBoardCallback
 from layers import MaskedLinear, MaskedEmbedding
 from utils import recursive_setattr, calculate_sparsity, chain, get_mask, calculate_hamming_dist
 from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, cola_pv_fn, qqp_pv_fn, qnli_pv_fn, mnli_pv_fn_2, DataCollatorForClozeTask, ANSWER_TOKEN
+from fisher import get_fisher_mask
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -61,6 +62,10 @@ check_min_version("4.26.0.dev0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/text-classification/requirements.txt")
 
+glue_tasks = ["cola", "mnli", "mrpc", "qnli", "qqp", "rte", "sst2"]
+local_tasks = ["newsqa", "grammar_test"]
+etc_tasks = local_tasks + ["snli", "sick", "grammar_test"]
+local_dir = {"newsqa": "data/datasets_self_collected/qnli_ood", "grammar_test": "data/datasets_self_collected/cola_ood"}
 task_to_keys = {
     "cola": ("sentence", None),
     "mnli": ("premise", "hypothesis"),
@@ -71,7 +76,10 @@ task_to_keys = {
     "sst2": ("sentence", None),
     "stsb": ("sentence1", "sentence2"),
     "wnli": ("sentence1", "sentence2"),
-    "amazon_polarity": ("content", None),
+    "snli": ("premise", "hypothesis"),
+    "sick": ("sentence_A", "sentence_B"),
+    "newsqa": ("question", "sentence"),
+    "grammar_test": ("sentence", None)
 }
 
 task_to_pv_fn = {
@@ -88,6 +96,8 @@ task_to_pv_fn = {
     "hans" : rte_pv_fn,
     "sick" : mnli_pv_fn_2,
     "snli" : mnli_pv_fn_2,
+    "newsqa": qnli_pv_fn,
+    "grammar_test": cola_pv_fn,
 }
 
 logger = logging.getLogger(__name__)
@@ -228,6 +238,7 @@ class ModelArguments:
         default=False,
         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
+    # TODO: make this a standalone argument
     initial_sparsity: float = field(default=0.0, metadata={"help": "Initial sparsity."})
     init_scale: float = field(default=0.02, metadata={"help": "Initial scale."})
     threshold: float = field(default=0.01, metadata={"help": "Threshold."})
@@ -235,12 +246,44 @@ class ModelArguments:
     hidden_dropout_prob: float = field(default=0.1, metadata={"help": "Hidden dropout prob."})
 
 
+@dataclass
+class SparseUpdateTrainingArguments(TrainingArguments):
+    num_samples: int = field(
+        # default=1024,
+        default=0,
+        metadata={"help": "The number of samples to compute parameters importance"}
+    )
+    # keep_ratio: float = field(
+    #     # default=0.005,
+    #     default=0.95,
+    #     metadata={"help": "The trainable parameters to total parameters."}
+    # )
+    mask_method: str = field(
+        default="label-absolute",
+        metadata={"help": "The method to select trainable parameters. Format: sample_type-grad_type, \
+                   where sample_type in \{label, expect\}, and grad_type in \{absolute, square\}"}
+    )
+    normal_training: bool = field(
+        default=False,
+        metadata={"help": "Whether to use typical BERT training method."}
+    )
+    mask_path: str = field(
+        default="",
+        metadata={"help": "The path for existing mask."}
+    )
+    data_split_path: str = field(
+        default="",
+        metadata={"help": "The path for existing training data indices."}
+    )
+
+
+
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, SparseUpdateTrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
@@ -273,6 +316,14 @@ def main():
     )
     logger.info(f"Training/evaluation parameters {training_args}")
 
+    i = 2
+    while os.path.isdir(training_args.output_dir):
+        if training_args.output_dir.endswith(f"_{i-1}"):
+            training_args.output_dir = training_args.output_dir.replace(f"_{i-1}", f"_{i}")
+        else:
+            training_args.output_dir = training_args.output_dir + f"_{i}"
+        i += 1
+
     # Detecting last checkpoint.
     last_checkpoint = None
     if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
@@ -303,22 +354,24 @@ def main():
     #
     # In distributed training, the load_dataset function guarantee that only one local process can concurrently
     # download the dataset.
-    if data_args.task_name is not None:
-        # Downloading and loading a dataset from the hub.
-        raw_datasets = load_dataset(
-            "glue",
-            data_args.task_name,
-            cache_dir=model_args.cache_dir,
-            use_auth_token=True if model_args.use_auth_token else None,
-        )
-    elif data_args.dataset_name is not None:
-        # Downloading and loading a dataset from the hub.
-        raw_datasets = load_dataset(
-            data_args.dataset_name,
-            data_args.dataset_config_name,
-            cache_dir=model_args.cache_dir,
-            use_auth_token=True if model_args.use_auth_token else None,
-        )
+    if data_args.dataset_name is not None:
+        if data_args.dataset_name in glue_tasks:
+            task_data = ("glue", data_args.dataset_name)
+        else:
+            task_data = (data_args.dataset_name,)
+
+        if data_args.dataset_name in local_tasks:
+            raw_datasets = DatasetDict()
+            validation = load_from_disk(local_dir[data_args.dataset_name])
+            raw_datasets["train"] = validation  # dummy
+            raw_datasets["validation"] = validation
+        else:
+            raw_datasets = load_dataset(
+                *task_data,
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+            )
+
         if data_args.dataset_name in ["amazon_polarity"]:
             raw_datasets["validation"] = raw_datasets["test"]
             raw_datasets.pop("test")
@@ -370,16 +423,18 @@ def main():
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 
     # Labels
-    if data_args.task_name is not None:
-        is_regression = data_args.task_name == "stsb"
+    if data_args.dataset_name in ["imdb", "yelp_polarity", "amazon_polarity", "grammar_test", "newsqa"]:
+        is_regression = False
+        num_labels = 2
+        if data_args.dataset_name == "newsqa":
+            label_list = ["not_entailment", "entailment"]
+    elif data_args.dataset_name is not None:
+        is_regression = data_args.dataset_name == "stsb"
         if not is_regression:
             label_list = raw_datasets["train"].features["label"].names
             num_labels = len(label_list)
         else:
             num_labels = 1
-    elif data_args.dataset_name in ["imdb", "yelp_polarity", "amazon_polarity" ]:
-        is_regression = False
-        num_labels = 2
 
     else:
         # Trying to have good defaults here, don't hesitate to tweak to your needs.
@@ -394,7 +449,12 @@ def main():
             num_labels = len(label_list)
 
     if not training_args.do_train and training_args.do_eval:
-        raw_datasets["validation"] = datasets.concatenate_datasets([raw_datasets["train"], raw_datasets["validation"]])
+        if data_args.dataset_name == "mnli":
+            raw_datasets["validation"] = raw_datasets["validation_mismatched"]
+        elif data_args.dataset_name in glue_tasks:
+            pass
+        elif data_args.dataset_name not in ["grammar_test", "newsqa"]:
+            raw_datasets["validation"] = datasets.concatenate_datasets([raw_datasets["train"], raw_datasets["validation"]])
 
     # Load pretrained model and tokenizer
     #
@@ -403,7 +463,7 @@ def main():
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
         num_labels=num_labels,
-        finetuning_task=data_args.task_name,
+        finetuning_task=data_args.dataset_name,
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
@@ -417,59 +477,9 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    if data_args.cloze_task:
-        model = AutoModelForMaskedLM.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            use_auth_token=True if model_args.use_auth_token else None,
-            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-        )
-    else:
-        model = AutoModelForSequenceClassification.from_pretrained(
-            model_args.model_name_or_path,
-            from_tf=bool(".ckpt" in model_args.model_name_or_path),
-            config=config,
-            cache_dir=model_args.cache_dir,
-            revision=model_args.model_revision,
-            use_auth_token=True if model_args.use_auth_token else None,
-            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
-        )
-    if model_args.initial_sparsity != 0.0:
-        for n, p in model.named_parameters():
-            p.requires_grad = False
-        for n, m in model.named_modules():
-            if isinstance(m, nn.Linear):
-                masked_linear = MaskedLinear(m.weight,
-                                             m.bias,
-                                             mask_scale=model_args.init_scale,
-                                             threshold=model_args.threshold,
-                                             initial_sparsity=model_args.initial_sparsity,
-                                             )
-                masked_linear.mask_real.requires_grad = True
-                masked_linear.bias.requires_grad = False
-                recursive_setattr(model, n, masked_linear)
-            # elif isinstance(m, nn.Embedding):
-            #     masked_embedding = MaskedEmbedding(m.weight,
-            #                                        m.padding_idx,
-            #                                        mask_scale=model_args.init_scale,
-            #                                        threshold=model_args.threshold,
-            #                                        initial_sparsity=model_args.initial_sparsity
-            #                                        )
-            #     masked_embedding.mask_real.requires_grad = True
-            #     recursive_setattr(model, n, masked_embedding)
-        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
 
-    if os.path.isdir(model_args.model_name_or_path):  # load from saved
-        print("Loading from saved model: ", model_args.model_name_or_path)
-        state_dict = torch.load(os.path.join(model_args.model_name_or_path, "pytorch_model.bin"))
-        model.load_state_dict(state_dict)
     # Preprocessing the raw_datasets
-    if data_args.task_name is not None:
-        sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
-    elif data_args.dataset_name in ["amazon_polarity"]:
+    if data_args.dataset_name in glue_tasks or data_args.dataset_name in etc_tasks:
         sentence1_key, sentence2_key = task_to_keys[data_args.dataset_name]
     else:
         # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
@@ -491,6 +501,8 @@ def main():
 
     # Some models have set the order of the labels to use, so let's make sure we do use it.
     label_to_id = None
+    if data_args.dataset_name == "newsqa":
+        label_to_id = {v: i for i, v in enumerate(label_list)}
     # if (
     #     model.config.label2id != PretrainedConfig(num_labels=num_labels).label2id
     #     and data_args.task_name is not None
@@ -509,12 +521,12 @@ def main():
     # elif data_args.task_name is None and not is_regression:
     #     label_to_id = {v: i for i, v in enumerate(label_list)}
 
-    if label_to_id is not None:
-        model.config.label2id = label_to_id
-        model.config.id2label = {id: label for label, id in config.label2id.items()}
-    elif data_args.task_name is not None and not is_regression:
-        model.config.label2id = {l: i for i, l in enumerate(label_list)}
-        model.config.id2label = {id: label for label, id in config.label2id.items()}
+    # if label_to_id is not None:
+    #     model.config.label2id = label_to_id
+    #     model.config.id2label = {id: label for label, id in config.label2id.items()}
+    # elif data_args.dataset_name is not None and not is_regression:
+    #     model.config.label2id = {l: i for i, l in enumerate(label_list)}
+    #     model.config.id2label = {id: label for label, id in config.label2id.items()}
 
     if data_args.max_seq_length > tokenizer.model_max_length:
         logger.warning(
@@ -531,16 +543,15 @@ def main():
         result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
 
         # Map labels to IDs (not necessary for GLUE tasks)
-        if label_to_id is not None and "label" in examples:
-            result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         if data_args.cloze_task:
             result["label"] = tokenizer.convert_tokens_to_ids(examples["label"])
+        elif label_to_id is not None and "label" in examples:
+            result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
         return result
 
     if data_args.cloze_task:
         tokenizer.add_special_tokens({"additional_special_tokens": [ANSWER_TOKEN]})
-        task_name = data_args.task_name if data_args.task_name is not None else data_args.dataset_name
-        pv_fn = task_to_pv_fn[task_name]
+        pv_fn = task_to_pv_fn[data_args.dataset_name]
         def pattern_verbalizer(examples):
             # turn examples into pvp format, depending on the task
             sent1s = examples[sentence1_key]
@@ -554,14 +565,14 @@ def main():
             return examples
         preprocess_function = chain(pattern_verbalizer, preprocess_function)
         raw_datasets["train"].features["label"] = Value(dtype='int32', id=None)
-        if data_args.task_name == "mnli":
+        if data_args.dataset_name == "mnli":
             raw_datasets["validation_matched"].features["label"] = Value(dtype='int32', id=None)
             raw_datasets["validation_mismatched"].features["label"] = Value(dtype='int32', id=None)
         else:
             raw_datasets["validation"].features["label"] = Value(dtype='int32', id=None)
         if "test" in raw_datasets:
             raw_datasets["test"].features["label"] = Value(dtype='int32', id=None)
-        if data_args.task_name == "mnli":  # mnli always has test
+        if data_args.dataset_name == "mnli":  # mnli always has test
             raw_datasets["test_matched"].features["label"] = Value(dtype='int32', id=None)
             raw_datasets["test_mismatched"].features["label"] = Value(dtype='int32', id=None)
 
@@ -583,15 +594,16 @@ def main():
     if training_args.do_eval:
         if "validation" not in raw_datasets and "validation_matched" not in raw_datasets:
             raise ValueError("--do_eval requires a validation dataset")
-        eval_dataset = raw_datasets["validation_matched" if data_args.task_name == "mnli" else "validation"]
+        eval_dataset = raw_datasets["validation_matched" if data_args.dataset_name == "mnli" else "validation"]
         if data_args.max_eval_samples is not None:
             max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
             eval_dataset = eval_dataset.select(range(max_eval_samples))
 
-    if training_args.do_predict or data_args.task_name is not None or data_args.test_file is not None:
+    #  if training_args.do_predict or data_args.dataset_name is not None or data_args.test_file is not None:
+    if training_args.do_predict or data_args.test_file is not None:
         if "test" not in raw_datasets and "test_matched" not in raw_datasets:
             raise ValueError("--do_predict requires a test dataset")
-        predict_dataset = raw_datasets["test_matched" if data_args.task_name == "mnli" else "test"]
+        predict_dataset = raw_datasets["test_matched" if data_args.dataset_name == "mnli" else "test"]
         if data_args.max_predict_samples is not None:
             max_predict_samples = min(len(predict_dataset), data_args.max_predict_samples)
             predict_dataset = predict_dataset.select(range(max_predict_samples))
@@ -602,12 +614,12 @@ def main():
             logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
 
     # Get the metric function
-    if data_args.task_name is not None:
-        metric = evaluate.load("glue", data_args.task_name)
+    if data_args.dataset_name in glue_tasks:
+        metric = evaluate.load("glue", data_args.dataset_name)
     else:
         metric = evaluate.load("accuracy")
     #FIXME: in order to calculate F1, label needs to be 0 or 1
-    if data_args.task_name in ["mrpc", "qqp", "mnli"]:
+    if data_args.dataset_name in ["mrpc", "qqp", "mnli"]:
         metric = evaluate.load("accuracy")
 
     # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
@@ -635,7 +647,7 @@ def main():
         def compute_metrics(p: EvalPrediction):
             preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
             preds = np.squeeze(preds) if is_regression else np.argmax(preds, axis=1)
-            if data_args.task_name is not None:
+            if data_args.dataset_name is not None:
                 result = metric.compute(predictions=preds, references=p.label_ids)
                 if len(result) > 1:
                     result["combined_score"] = np.mean(list(result.values())).item()
@@ -656,6 +668,110 @@ def main():
     if data_args.cloze_task:
         data_collator = DataCollatorForClozeTask(tokenizer)
 
+
+    if data_args.cloze_task:
+        model = AutoModelForMaskedLM.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
+    else:
+        model = AutoModelForSequenceClassification.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+            ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+        )
+
+    if os.path.isdir(model_args.model_name_or_path) and model_args.initial_sparsity != 0.0:  # load from saved
+        for n, p in model.named_parameters():
+            p.requires_grad = False
+        for n, m in model.named_modules():
+            if isinstance(m, nn.Linear):
+                masked_linear = MaskedLinear(m.weight,
+                                             m.bias,
+                                             mask_scale=model_args.init_scale,
+                                             threshold=model_args.threshold,
+                                             initial_sparsity=model_args.initial_sparsity,
+                                             )
+                masked_linear.mask_real.requires_grad = True
+                masked_linear.bias_mask_real.requires_grad = True
+                recursive_setattr(model, n, masked_linear)
+            elif isinstance(m, nn.Embedding):
+                masked_embedding = MaskedEmbedding(m.weight,
+                                                   m.padding_idx,
+                                                   mask_scale=model_args.init_scale,
+                                                   threshold=model_args.threshold,
+                                                   initial_sparsity=model_args.initial_sparsity
+                                                   )
+                masked_embedding.mask_real.requires_grad = True
+                recursive_setattr(model, n, masked_embedding)
+        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+
+    if os.path.isdir(model_args.model_name_or_path):  # load from saved (finetune or masked)
+        print("Loading from saved model: ", model_args.model_name_or_path)
+        state_dict = torch.load(os.path.join(model_args.model_name_or_path, "pytorch_model.bin"))
+        model.load_state_dict(state_dict)
+        if model_args.initial_sparsity != 0.0:
+            print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+
+    # Fisher mask
+    fisher_mask = None
+    if training_args.num_samples != 0:
+        fisher_mask = get_fisher_mask(
+                model_args.initial_sparsity, training_args.mask_method,
+                model, train_dataset, data_collator,
+                training_args.num_samples, training_args.mask_path
+                )
+        print(f"\n\nFisher mask sparsity: {calculate_sparsity(fisher_mask)}\n\n")
+
+    if model_args.initial_sparsity != 0.0 and not os.path.isdir(model_args.model_name_or_path):
+        for n, p in model.named_parameters():
+            p.requires_grad = False
+        for n, m in model.named_modules():
+            if isinstance(m, nn.Linear):
+                mask = None
+                bias_mask = None
+                if fisher_mask is not None:
+                    if n == "cls.predictions.decoder":
+                        mask = fisher_mask["bert.embeddings.word_embeddings.weight"]
+                    else:
+                        mask = fisher_mask[n + ".weight"]
+                        bias_mask = fisher_mask[n + ".bias"]
+                    mask = fisher_mask[n + ".weight"]
+                    bias_mask = fisher_mask[n + ".bias"]
+                masked_linear = MaskedLinear(m.weight,
+                                             m.bias,
+                                             mask_scale=model_args.init_scale,
+                                             threshold=model_args.threshold,
+                                             initial_sparsity=model_args.initial_sparsity,
+                                             mask=mask,
+                                             bias_mask=bias_mask,
+                                             )
+                masked_linear.mask_real.requires_grad = True
+                masked_linear.bias.requires_grad = False
+                recursive_setattr(model, n, masked_linear)
+            elif isinstance(m, nn.Embedding):
+                if fisher_mask is not None:
+                        mask = fisher_mask[n + ".weight"]
+                masked_embedding = MaskedEmbedding(m.weight,
+                                                   m.padding_idx,
+                                                   mask_scale=model_args.init_scale,
+                                                   threshold=model_args.threshold,
+                                                   initial_sparsity=model_args.initial_sparsity
+                                                   )
+                masked_embedding.mask_real.requires_grad = True
+                recursive_setattr(model, n, masked_embedding)
+        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+
+
     ##TODO: have README.md report best accuracy
     class ExtendedTensorBoardCallback(TensorBoardCallback):
         """
@@ -667,12 +783,16 @@ def main():
                 return
             i = 2
             while os.path.isdir(args.logging_dir):
-                args.logging_dir = args.logging_dir + f"_{i}"
+                if args.logging_dir.endswith(f"_{i-1}"):
+                    args.logging_dir = args.logging_dir.replace(f"_{i-1}", f"_{i}")
+                else:
+                    args.logging_dir = args.logging_dir + f"_{i}"
                 i += 1
             self.prev_mask_dict = get_mask(model)
             self.init_mask_dict = get_mask(model)
 
             super().on_train_begin(args, state, control, **kwargs)
+            self.on_log(args, state, control, logs={}, **kwargs)
 
         def on_log(self, args, state, control, logs=None, **kwargs):
             if not state.is_world_process_zero:
@@ -696,8 +816,11 @@ def main():
             super().on_log(args, state, control, logs=logs, **kwargs)
 
     # Initialize our Trainer
+    training_args.report_to = []
     callbacks = []
-    if model_args.initial_sparsity != 0.0 and not os.path.isdir(model_args.model_name_or_path):
+    only_eval = not training_args.do_train and training_args.do_eval
+    # if model_args.initial_sparsity != 0.0 and not os.path.isdir(model_args.model_name_or_path):
+    if model_args.initial_sparsity != 0.0 and not only_eval:
         callbacks = [ExtendedTensorBoardCallback()]
     trainer = Trainer(
         model=model,
@@ -738,9 +861,9 @@ def main():
         logger.info("*** Evaluate ***")
 
         # Loop to handle MNLI double evaluation (matched, mis-matched)
-        tasks = [data_args.task_name]
+        tasks = [data_args.dataset_name]
         eval_datasets = [eval_dataset]
-        if data_args.task_name == "mnli":
+        if data_args.dataset_name == "mnli":
             tasks.append("mnli-mm")
             valid_mm_dataset = raw_datasets["validation_mismatched"]
             if data_args.max_eval_samples is not None:
@@ -769,9 +892,9 @@ def main():
         logger.info("*** Predict ***")
 
         # Loop to handle MNLI double evaluation (matched, mis-matched)
-        tasks = [data_args.task_name]
+        tasks = [data_args.dataset_name]
         predict_datasets = [predict_dataset]
-        if data_args.task_name == "mnli":
+        if data_args.dataset_name == "mnli":
             tasks.append("mnli-mm")
             predict_datasets.append(raw_datasets["test_mismatched"])
 
@@ -794,11 +917,11 @@ def main():
                             writer.write(f"{index}\t{item}\n")
 
     kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-classification"}
-    if data_args.task_name is not None:
+    if data_args.dataset_name is not None:
         kwargs["language"] = "en"
         kwargs["dataset_tags"] = "glue"
-        kwargs["dataset_args"] = data_args.task_name
-        kwargs["dataset"] = f"GLUE {data_args.task_name.upper()}"
+        kwargs["dataset_args"] = data_args.dataset_name
+        kwargs["dataset"] = f"GLUE {data_args.dataset_name.upper()}"
 
     if training_args.push_to_hub:
         trainer.push_to_hub(**kwargs)

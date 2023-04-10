@@ -2,3 +2,7 @@ outs/
 logs/
 tir_logs/
 scripts/
+data/
+eval_result/
+*tensorboard*
+*.png
