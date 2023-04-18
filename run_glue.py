@@ -748,37 +748,37 @@ def main():
                 )
                 print(f"\n\nFisher mask sparsity: {calculate_sparsity(fisher_mask)}\n\n")
 
-    if model_args.initial_sparsity != 0.0:
-        for n, p in model.named_parameters():
-            p.requires_grad = False
-        for n, m in model.named_modules():
-            if isinstance(m, nn.Linear):
-                mask = None
-                if fisher_mask is not None:
-                    if n == "cls.predictions.decoder":
-                        mask = fisher_mask["bert.embeddings.word_embeddings.weight"]
-                    else:
-                        mask = fisher_mask[n + ".weight"]
-                masked_linear = MaskedLinear(m.weight,
-                                             m.bias,
-                                             mask_scale=model_args.init_scale,
-                                             threshold=model_args.threshold,
-                                             initial_sparsity=model_args.initial_sparsity,
-                                             mask=mask,
-                                             )
-                masked_linear.mask_real.requires_grad = True
-                masked_linear.bias.requires_grad = False
-                recursive_setattr(model, n, masked_linear)
-            # elif isinstance(m, nn.Embedding):
-            #     masked_embedding = MaskedEmbedding(m.weight,
-            #                                        m.padding_idx,
-            #                                        mask_scale=model_args.init_scale,
-            #                                        threshold=model_args.threshold,
-            #                                        initial_sparsity=model_args.initial_sparsity
-            #                                        )
-            #     masked_embedding.mask_real.requires_grad = True
-            #     recursive_setattr(model, n, masked_embedding)
-        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+    # if model_args.initial_sparsity != 0.0:
+    #     for n, p in model.named_parameters():
+    #         p.requires_grad = False
+    #     for n, m in model.named_modules():
+    #         if isinstance(m, nn.Linear):
+    #             mask = None
+    #             if fisher_mask is not None:
+    #                 if n == "cls.predictions.decoder":
+    #                     mask = fisher_mask["bert.embeddings.word_embeddings.weight"]
+    #                 else:
+    #                     mask = fisher_mask[n + ".weight"]
+    #             masked_linear = MaskedLinear(m.weight,
+    #                                          m.bias,
+    #                                          mask_scale=model_args.init_scale,
+    #                                          threshold=model_args.threshold,
+    #                                          initial_sparsity=model_args.initial_sparsity,
+    #                                          mask=mask,
+    #                                          )
+    #             masked_linear.mask_real.requires_grad = True
+    #             masked_linear.bias.requires_grad = False
+    #             recursive_setattr(model, n, masked_linear)
+    #         # elif isinstance(m, nn.Embedding):
+    #         #     masked_embedding = MaskedEmbedding(m.weight,
+    #         #                                        m.padding_idx,
+    #         #                                        mask_scale=model_args.init_scale,
+    #         #                                        threshold=model_args.threshold,
+    #         #                                        initial_sparsity=model_args.initial_sparsity
+    #         #                                        )
+    #         #     masked_embedding.mask_real.requires_grad = True
+    #         #     recursive_setattr(model, n, masked_embedding)
+    #     print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
 
     #
 
