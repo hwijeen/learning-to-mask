@@ -9,7 +9,7 @@
 #SBATCH --gres=gpu:2080Ti:1
 #SBATCH --exclude=tir-0-[7,9,13,15,17,19],tir-0-32
 
-source ~/anaconda3/etc/profile.d/conda.sh
+source ~/mambaforge/etc/profile.d/conda.sh
 
 conda activate mask
 

@@ -17,9 +17,9 @@ python run_glue.py \
   --per_device_train_batch_size 32 \
   --learning_rate ${learning_rate} \
   --num_train_epochs 10 \
-  --output_dir outs/mask_cloze/${task}/${learning_rate}/${sparsity}/${seed}/emblin \
+  --output_dir outs/mask_cloze/${task}/${learning_rate}/${sparsity}/${seed}/lin \
   --logging_steps 10 \
-  --logging_dir logs/mask_cloze/${task}/${learning_rate}/${sparsity}/${seed}/emblin \
+  --logging_dir logs/mask_cloze/${task}/${learning_rate}/${sparsity}/${seed}/lin \
   --evaluation_strategy steps \
   --eval_steps ${eval_steps[$task]} \
   --save_strategy steps \

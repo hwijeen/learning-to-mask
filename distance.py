@@ -98,8 +98,9 @@ def save_heatmap(t, model_paths):
     plt.savefig("distance.png")
 
 model_paths = get_penultimate_leaf_folders(args.model_path)
-model_paths = filter_paths(model_paths, ["0.9", "42", "5e-5"], ["qqp"])
-# model_paths = filter_paths(model_paths, ["0.05", "42", "5e-4"], ["qqp"])
+# model_paths = filter_paths(model_paths, ["0.9", "42", "5e-5"], not_contain=None)
+model_paths = filter_paths(model_paths, ["0.05", "42", "5e-4"], not_contain=None)
+print("Models to load: ", model_paths)
 # model_paths = filter_paths(model_paths, ["0.9", "5e-5", "sst2"])
 models = [load_model(model_path) for model_path in model_paths]
 
