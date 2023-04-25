@@ -1,6 +1,7 @@
 from functools import reduce
 
 import torch
+import torch.nn as nn
 
 from layers import MaskedLinear
 
@@ -60,3 +61,30 @@ def calculate_hamming_dist(prev_mask_dict, curr_mask_dict):
     num_total = sum([v.numel() for v in prev_mask_dict.values()])
     return num_changed / num_total
 
+
+def maskfy_model(model, initial_sparsity, init_scale=0.02, threshold=0.01):
+    if initial_sparsity != 0.0:  # load from saved
+        for n, p in model.named_parameters():
+            p.requires_grad = False
+        for n, m in model.named_modules():
+            if isinstance(m, nn.Linear):
+                masked_linear = MaskedLinear(m.weight,
+                                             m.bias,
+                                             mask_scale=init_scale,
+                                             threshold=threshold,
+                                             initial_sparsity=initial_sparsity,
+                                             )
+                masked_linear.mask_real.requires_grad = True
+                masked_linear.bias.requires_grad = False
+                recursive_setattr(model, n, masked_linear)
+            # elif isinstance(m, nn.Embedding):
+            #     masked_embedding = MaskedEmbedding(m.weight,
+            #                                        m.padding_idx,
+            #                                        mask_scale=args.init_scale,
+            #                                        threshold=args.threshold,
+            #                                        initial_sparsity=args.initial_sparsity
+            #                                        )
+            #     masked_embedding.mask_real.requires_grad = True
+            #     recursive_setattr(model, n, masked_embedding)
+        print(f" ========== Initial sparsity: {calculate_sparsity(model)} ==========")
+    return model

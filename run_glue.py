@@ -52,7 +52,7 @@ from transformers.utils.versions import require_version
 from transformers.integrations import TensorBoardCallback
 
 from layers import MaskedLinear, MaskedEmbedding
-from utils import recursive_setattr, calculate_sparsity, chain, get_mask, calculate_hamming_dist
+from utils import recursive_setattr, calculate_sparsity, chain, get_mask, calculate_hamming_dist, maskfy_model
 from pattern_verbalizer import rte_pv_fn, sst2_pv_fn, cola_pv_fn, qqp_pv_fn, qnli_pv_fn, mnli_pv_fn_2, DataCollatorForClozeTask, ANSWER_TOKEN
 from fisher import *
 
@@ -488,30 +488,8 @@ def main():
             ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
         )
 
-    if os.path.isdir(model_args.model_name_or_path) and model_args.initial_sparsity != 0.0:  # load from saved
-        for n, p in model.named_parameters():
-            p.requires_grad = False
-        for n, m in model.named_modules():
-            if isinstance(m, nn.Linear):
-                masked_linear = MaskedLinear(m.weight,
-                                             m.bias,
-                                             mask_scale=model_args.init_scale,
-                                             threshold=model_args.threshold,
-                                             initial_sparsity=model_args.initial_sparsity,
-                                             )
-                masked_linear.mask_real.requires_grad = True
-                masked_linear.bias.requires_grad = False
-                recursive_setattr(model, n, masked_linear)
-            # elif isinstance(m, nn.Embedding):
-            #     masked_embedding = MaskedEmbedding(m.weight,
-            #                                        m.padding_idx,
-            #                                        mask_scale=model_args.init_scale,
-            #                                        threshold=model_args.threshold,
-            #                                        initial_sparsity=model_args.initial_sparsity
-            #                                        )
-            #     masked_embedding.mask_real.requires_grad = True
-            #     recursive_setattr(model, n, masked_embedding)
-        print(f"\n\n ========== Initial sparsity: {calculate_sparsity(model)} ==========\n\n")
+    if model_args.initial_sparsity != 0.0:
+        model = maskfy_model(model, model_args.initial_sparsity, model_args.init_scale, model_args.threshold)
 
     if os.path.isdir(model_args.model_name_or_path):  # load from saved
         print("Loading from saved model: ", model_args.model_name_or_path)
